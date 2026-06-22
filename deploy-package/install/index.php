@@ -17,18 +17,38 @@ if (file_exists(__DIR__ . '/../config.php')) {
 
 // 处理AJAX请求
 if (isset($_POST['ajax'])) {
+    // 抑制 PHP 错误输出，确保返回纯 JSON
+    error_reporting(0);
+    ini_set('display_errors', '0');
     header('Content-Type: application/json; charset=utf-8');
+    ob_start();
     $action = $_POST['ajax'];
 
-    switch ($action) {
-        case 'check_db':
-            handleCheckDb();
-            break;
-        case 'install':
-            handleInstall();
-            break;
-        default:
-            echo json_encode(['ok' => false, 'msg' => '未知操作']);
+    try {
+        switch ($action) {
+            case 'check_db':
+                handleCheckDb();
+                break;
+            case 'install':
+                handleInstall();
+                break;
+            default:
+                echo json_encode(['ok' => false, 'msg' => '未知操作']);
+        }
+    } catch (Throwable $e) {
+        // 清空缓冲区中的错误输出
+        ob_end_clean();
+        ob_start();
+        echo json_encode(['ok' => false, 'msg' => '安装异常: ' . $e->getMessage()]);
+    }
+
+    // 只输出 JSON 部分
+    $output = ob_get_clean();
+    // 提取最后一个完整的 JSON 对象
+    if (preg_match('/(\{[^{}]*\})\s*$/', $output, $m)) {
+        echo $m[1];
+    } else {
+        echo json_encode(['ok' => false, 'msg' => '服务器返回异常']);
     }
     exit;
 }
