@@ -1,0 +1,9 @@
+{
+  "name": "video-matrix-client",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Open index.html in browser'",
+    "build": "mkdir -p dist && cp index.html dist/ && cp -r assets dist/ 2>/dev/null || true"
+  }
+}
