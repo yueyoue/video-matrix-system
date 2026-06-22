@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>短视频矩阵运营系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config={theme:{extend:{colors:{primary:'#165DFF',success:'#00B42A',warning:'#FF7D00',danger:'#F53F3F',wechat:'#07C160','gray-bg':'#F5F7FA','gray-border':'#E5E6EB'}}}}
+    </script>
+    <style>
+        .sidebar-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;cursor:pointer;transition:all .2s;color:#666;text-decoration:none}
+        .sidebar-item:hover{background:rgba(22,93,255,.05);color:#165DFF}
+        .sidebar-item.active{background:rgba(22,93,255,.1);color:#165DFF;font-weight:500}
+        .tab-item{padding:8px 16px;cursor:pointer;border-bottom:2px solid transparent;color:#999;transition:all .2s}
+        .tab-item:hover{color:#165DFF}
+        .tab-item.active{color:#165DFF;border-color:#165DFF;font-weight:500}
+        .btn-primary{padding:8px 16px;background:#165DFF;color:#fff;border-radius:6px;font-size:14px;cursor:pointer;border:none;transition:all .2s;display:inline-flex;align-items:center;gap:4px}
+        .btn-primary:hover{background:rgba(22,93,255,.9)}
+        .btn-default{padding:8px 16px;background:#fff;border:1px solid #E5E6EB;border-radius:6px;font-size:14px;cursor:pointer;color:#333;transition:all .2s;display:inline-flex;align-items:center;gap:4px}
+        .btn-default:hover{background:#f9f9f9}
+        .btn-danger{padding:8px 16px;background:#F53F3F;color:#fff;border-radius:6px;font-size:14px;cursor:pointer;border:none}
+        .card{background:#fff;border-radius:8px;border:1px solid #E5E6EB;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+        .form-input{width:100%;padding:8px 12px;border:1px solid #E5E6EB;border-radius:6px;font-size:14px;outline:none;transition:all .2s}
+        .form-input:focus{border-color:#165DFF;box-shadow:0 0 0 1px #165DFF}
+        .form-label{display:block;font-size:14px;color:#333;margin-bottom:6px}
+        .table-th{padding:12px 16px;text-align:left;font-size:12px;color:#999;background:#f9f9f9;border-bottom:1px solid #E5E6EB;font-weight:500}
+        .table-td{padding:12px 16px;font-size:14px;color:#333;border-bottom:1px solid #E5E6EB}
+        .stat-card{background:#fff;border-radius:8px;border:1px solid #E5E6EB;box-shadow:0 1px 2px rgba(0,0,0,.04);padding:20px}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000}
+        .modal{background:#fff;border-radius:12px;width:520px;max-height:80vh;overflow-y:auto}
+        .modal-header{padding:16px 20px;border-bottom:1px solid #E5E6EB;display:flex;justify-content:space-between;align-items:center}
+        .modal-body{padding:20px}
+        .modal-footer{padding:12px 20px;border-top:1px solid #E5E6EB;display:flex;justify-content:flex-end;gap:8px}
+        .toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:2000;animation:slideIn .3s ease}
+        .toast.success{background:#00B42A}.toast.error{background:#F53F3F}.toast.warning{background:#FF7D00}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px}
+        .badge-green{background:#E8FFEA;color:#00B42A}.badge-red{background:#FFE8E8;color:#F53F3F}.badge-blue{background:#E8F3FF;color:#165DFF}.badge-orange{background:#FFF3E8;color:#FF7D00}.badge-gray{background:#f5f5f5;color:#999}
+        .platform-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px}
+        .platform-douyin{background:#FFE8E8;color:#F53F3F}
+        .platform-kuaishou{background:#FFF3E8;color:#FF7D00}
+        .platform-xiaohongshu{background:#FFE8E8;color:#F53F3F}
+        .platform-wechat{background:#E8FFEA;color:#07C160}
+        .video-card{border:1px solid #E5E6EB;border-radius:6px;overflow:hidden}
+        .video-card .preview{height:112px;background:#e5e5e5;display:flex;align-items:center;justify-content:center;color:#999;font-size:12px}
+        .progress-bar{height:6px;background:#E5E6EB;border-radius:3px;overflow:hidden}
+        .progress-bar .fill{height:100%;background:#165DFF;border-radius:3px;transition:width .3s}
+        .range-slider{-webkit-appearance:none;width:100%;height:4px;background:#E5E6EB;border-radius:2px;outline:none}
+        .range-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;background:#165DFF;border-radius:50%;cursor:pointer}
+    </style>
+</head>
+<body class="bg-gray-bg h-screen flex overflow-hidden">
+
+    <!-- ========== 登录页面 ========== -->
+    <div id="login-box" class="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
+        <div class="card w-96 p-8">
+            <div class="text-center mb-8">
+                <i class="fa fa-play-circle text-primary text-4xl mb-3"></i>
+                <h2 class="text-xl font-bold text-gray-800">短视频矩阵运营系统</h2>
+                <p class="text-sm text-gray-500 mt-1">请登录后使用客户端</p>
+            </div>
+            <div id="env-check" class="mb-4">
+                <div class="text-sm text-gray-600 mb-2"><i class="fa fa-spinner fa-spin mr-1"></i>正在检测运行环境...</div>
+                <div class="progress-bar"><div class="fill" id="env-progress" style="width:0%"></div></div>
+                <div id="env-status" class="text-xs text-gray-400 mt-2"></div>
+            </div>
+            <div id="login-form" class="space-y-4 hidden">
+                <div><label class="form-label">账号</label><input type="text" class="form-input" placeholder="请输入用户名" id="login-user" value="admin"></div>
+                <div><label class="form-label">密码</label><input type="password" class="form-input" placeholder="请输入密码" id="login-pass" value="123456"></div>
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked class="rounded" id="remember-me"> 记住密码</label>
+                    <a href="javascript:void(0)" class="text-xs text-primary" onclick="showToast('请联系管理员重置密码','warning')">忘记密码？</a>
+                </div>
+                <button class="btn-primary w-full justify-center" onclick="doLogin()">登 录</button>
+                <div id="login-error" class="text-danger text-sm text-center hidden"></div>
+            </div>
+            <div class="text-center text-xs text-gray-400 mt-6">当前版本 v1.2.0</div>
+        </div>
+    </div>
+
+    <!-- ========== 主程序界面 ========== -->
+    <div id="main-app" class="hidden w-full h-full flex">
+        <!-- 侧边栏 -->
+        <aside class="w-60 bg-white border-r border-gray-border flex flex-col h-full">
+            <div class="h-16 flex items-center px-5 border-b border-gray-border">
+                <i class="fa fa-play-circle text-primary text-2xl mr-2"></i>
+                <span class="font-bold text-lg text-gray-800">矩阵运营系统</span>
+            </div>
+            <nav class="flex-1 p-3 space-y-1" id="sidebar">
+                <a href="javascript:void(0)" class="sidebar-item active" data-page="dashboard"><i class="fa fa-tachometer w-5 text-center"></i><span>数据总览</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="analysis"><i class="fa fa-bar-chart w-5 text-center"></i><span>数据分析</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="account"><i class="fa fa-user-circle w-5 text-center"></i><span>账号管理</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="video"><i class="fa fa-film w-5 text-center"></i><span>视频处理</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="publish"><i class="fa fa-upload w-5 text-center"></i><span>发布调度</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="config"><i class="fa fa-cogs w-5 text-center"></i><span>接口配置</span></a>
+                <a href="javascript:void(0)" class="sidebar-item" data-page="log"><i class="fa fa-file-text-o w-5 text-center"></i><span>日志中心</span></a>
+            </nav>
+            <div class="border-t border-gray-border p-3">
+                <div class="flex items-center gap-3 px-2 py-2 mb-2">
+                    <div class="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary"><i class="fa fa-user"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-800 truncate" id="display-user">运营员小张</div>
+                        <div class="text-xs text-gray-400" id="display-quota">今日配额：12/50条</div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between px-2 text-xs mb-2">
+                    <span class="text-gray-400">版本 v1.2.0</span>
+                    <a href="javascript:void(0)" class="text-primary hover:underline" onclick="openModal('update-modal')">检查更新</a>
+                </div>
+                <button class="btn-default w-full text-xs justify-center" onclick="doLogout()">退出登录</button>
+            </div>
+        </aside>
+
+        <!-- 主内容 -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden">
+            <header class="h-16 bg-white border-b border-gray-border flex items-center justify-between px-6">
+                <h1 id="page-title" class="text-lg font-medium text-gray-800">数据总览</h1>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-gray-500">运行状态：<span class="text-success font-medium">正常</span></span>
+                    <button class="btn-default" onclick="showToast('数据已刷新','success')"><i class="fa fa-refresh mr-1"></i>刷新数据</button>
+                </div>
+            </header>
+            <div class="flex-1 overflow-y-auto p-6">
+
+                <!-- ====== 1. 数据总览 ====== -->
+                <section class="page" id="page-dashboard">
+                    <div class="mb-4 text-sm text-gray-500 font-medium">我的工作量（今日）</div>
+                    <div class="grid grid-cols-4 gap-4 mb-6">
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">生成视频数</div><div class="text-2xl font-bold text-gray-800">12</div><div class="text-xs text-gray-400 mt-1">配额上限 50 条</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">发布成功数</div><div class="text-2xl font-bold text-gray-800">8</div><div class="text-xs text-success mt-1">成功率 88.9%</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">发布失败数</div><div class="text-2xl font-bold text-danger">1</div><div class="text-xs text-gray-400 mt-1">账号登录失效</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">管理账号数</div><div class="text-2xl font-bold text-gray-800">15</div><div class="text-xs text-gray-400 mt-1">抖音4 / 快手2 / 小红书6 / 视频号3</div></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="card">
+                            <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">最近发布记录</span><a href="javascript:void(0)" class="text-xs text-primary" onclick="switchPage('publish')">查看全部</a></div>
+                            <table class="w-full"><thead><tr><th class="table-th">平台</th><th class="table-th">账号</th><th class="table-th">视频</th><th class="table-th">状态</th></tr></thead>
+                            <tbody id="dashboard-recent"></tbody></table>
+                        </div>
+                        <div class="card">
+                            <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">异常预警</span><a href="javascript:void(0)" class="text-xs text-primary" onclick="switchPage('log')">去日志查看</a></div>
+                            <div class="p-4 space-y-3" id="dashboard-alerts"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 2. 数据分析 ====== -->
+                <section class="page hidden" id="page-analysis">
+                    <div class="card mb-6">
+                        <div class="p-4 flex items-center gap-4 flex-wrap">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-gray-600">时间范围：</span>
+                                <div class="flex border border-gray-border rounded-md overflow-hidden" id="time-range-btns">
+                                    <button class="px-3 py-1.5 text-xs bg-primary text-white" data-range="today">今日</button>
+                                    <button class="px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50" data-range="7d">近7天</button>
+                                    <button class="px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50" data-range="30d">近30天</button>
+                                    <button class="px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50" data-range="custom">自定义</button>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2"><input type="date" class="form-input w-36" value="2026-06-22"><span class="text-gray-400">至</span><input type="date" class="form-input w-36" value="2026-06-22"></div>
+                            <select class="form-input w-32" id="filter-platform"><option>全部平台</option><option>抖音</option><option>快手</option><option>小红书</option><option>视频号</option></select>
+                            <select class="form-input w-32" id="filter-account"><option>全部账号</option><option>美食探店号01</option><option>美食探店号02</option></select>
+                            <button class="btn-primary ml-auto" onclick="showToast('查询完成','success')">查询</button>
+                            <button class="btn-default" onclick="showToast('Excel已导出','success')">导出Excel</button>
+                        </div>
+                    </div>
+                    <div class="mb-4 text-sm text-gray-500 font-medium">平台数据汇总</div>
+                    <div class="grid grid-cols-4 gap-4 mb-6">
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">总播放量</div><div class="text-2xl font-bold text-gray-800">128.6w</div><div class="text-xs text-success mt-1">较昨日 +12.3%</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">总点赞量</div><div class="text-2xl font-bold text-gray-800">3.24w</div><div class="text-xs text-success mt-1">较昨日 +8.7%</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">总评论量</div><div class="text-2xl font-bold text-gray-800">1586</div><div class="text-xs text-warning mt-1">较昨日 -2.1%</div></div>
+                        <div class="stat-card"><div class="text-gray-500 text-sm mb-2">总分享量</div><div class="text-2xl font-bold text-gray-800">892</div><div class="text-xs text-success mt-1">较昨日 +15.4%</div></div>
+                    </div>
+                    <div class="card mb-6">
+                        <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">分平台数据明细</span></div>
+                        <table class="w-full"><thead><tr><th class="table-th">平台</th><th class="table-th">账号数</th><th class="table-th">播放量</th><th class="table-th">点赞量</th><th class="table-th">评论量</th><th class="table-th">分享量</th><th class="table-th">平均播放</th></tr></thead>
+                        <tbody id="analysis-platform"></tbody></table>
+                    </div>
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">单视频数据明细</span><span class="text-xs text-gray-400" id="video-count">共 126 条视频</span></div>
+                        <table class="w-full"><thead><tr><th class="table-th w-12">序号</th><th class="table-th">平台</th><th class="table-th">所属账号</th><th class="table-th">视频标题</th><th class="table-th">播放量</th><th class="table-th">点赞量</th><th class="table-th">评论量</th><th class="table-th">分享量</th><th class="table-th">发布时间</th></tr></thead>
+                        <tbody id="analysis-videos"></tbody></table>
+                        <div class="px-5 py-3 border-t border-gray-border flex justify-between items-center text-sm text-gray-500">
+                            <span id="video-page-info">共 126 条记录</span>
+                            <div class="flex gap-1"><button class="btn-default px-3 py-1" onclick="showToast('已到第一页','warning')">上一页</button><button class="btn-primary px-3 py-1">1</button><button class="btn-default px-3 py-1">2</button><button class="btn-default px-3 py-1">3</button><button class="btn-default px-3 py-1">下一页</button></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 3. 账号管理 ====== -->
+                <section class="page hidden" id="page-account">
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center">
+                            <div class="flex items-center gap-1" id="account-tabs">
+                                <div class="tab-item active" data-platform="douyin">抖音 (10)</div>
+                                <div class="tab-item" data-platform="kuaishou">快手 (5)</div>
+                                <div class="tab-item" data-platform="xiaohongshu">小红书 (20)</div>
+                                <div class="tab-item" data-platform="weixin">视频号 (3)</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button class="btn-default" onclick="showToast('批量检测中...','success')">批量检测状态</button>
+                                <button class="btn-primary" onclick="openModal('add-account-modal')"><i class="fa fa-plus mr-1"></i>添加账号</button>
+                            </div>
+                        </div>
+                        <table class="w-full"><thead><tr><th class="table-th w-10"><input type="checkbox" class="rounded"></th><th class="table-th">账号昵称</th><th class="table-th">状态</th><th class="table-th">作品数</th><th class="table-th">总播放量</th><th class="table-th">今日发布</th><th class="table-th">最后登录</th><th class="table-th">操作</th></tr></thead>
+                        <tbody id="account-table-body"></tbody></table>
+                        <div class="px-5 py-3 border-t border-gray-border flex justify-between items-center text-sm text-gray-500">
+                            <span id="account-count">共 10 条记录</span>
+                            <div class="flex gap-1"><button class="btn-default px-3 py-1">上一页</button><button class="btn-primary px-3 py-1">1</button><button class="btn-default px-3 py-1">2</button><button class="btn-default px-3 py-1">下一页</button></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 4. 视频处理 ====== -->
+                <section class="page hidden" id="page-video">
+                    <div class="grid grid-cols-2 gap-6 mb-6">
+                        <div class="card">
+                            <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">原视频裁切</span></div>
+                            <div class="p-5 space-y-4">
+                                <div><label class="form-label">上传原视频（支持批量）</label>
+                                    <div class="border-2 border-dashed border-gray-border rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors" onclick="document.getElementById('video-upload').click()">
+                                        <i class="fa fa-cloud-upload text-3xl text-gray-400 mb-2"></i>
+                                        <div class="text-sm text-gray-500">点击或拖拽视频文件到此处上传</div>
+                                        <div class="text-xs text-gray-400 mt-1" id="upload-status">支持 MP4/MOV/AVI 格式</div>
+                                    </div>
+                                    <input type="file" id="video-upload" class="hidden" multiple accept="video/*" onchange="handleUpload(this)">
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div><label class="form-label">裁切段数</label><input type="number" class="form-input" value="5" id="cut-segments"></div>
+                                    <div><label class="form-label">命名规则</label><input type="text" class="form-input" value="{原序号}-{片段序号}" id="naming-rule"></div>
+                                </div>
+                                <button class="btn-primary w-full justify-center" onclick="startCut()"><i class="fa fa-scissors mr-1"></i>开始批量裁切</button>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">混剪与配音设置</span></div>
+                            <div class="p-5 space-y-4">
+                                <div><label class="form-label">混剪组合规则</label><select class="form-input" id="mix-rule"><option>每段取1个片段，两两组合</option><option>全排列随机组合</option></select></div>
+                                <div class="p-3 bg-primary/5 rounded-md border border-primary/10">
+                                    <div class="text-sm font-medium text-gray-800 mb-3"><i class="fa fa-microphone text-primary mr-1"></i>AI智能配音</div>
+                                    <div class="space-y-3">
+                                        <div><label class="form-label">配音文案</label><textarea class="form-input" rows="2" placeholder="输入要转语音的文字内容" id="dubbing-text"></textarea></div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div><label class="form-label">选择音色</label><select class="form-input" id="voice-select"><option>温柔女声-小云</option><option>磁性男声-阿凯</option><option>活力少女-小桃</option><option>沉稳旁白-老周</option></select></div>
+                                            <div><label class="form-label">语速</label><input type="range" class="range-slider mt-3" value="100" min="50" max="200" id="voice-speed" oninput="document.getElementById('speed-val').textContent=this.value+'%'"><span class="text-xs text-gray-400" id="speed-val">100%</span></div>
+                                        </div>
+                                        <div class="flex gap-2"><button class="btn-default text-xs flex-1 justify-center" onclick="showToast('正在试听...','success')"><i class="fa fa-play mr-1"></i>试听配音</button><button class="btn-primary text-xs flex-1 justify-center" onclick="showToast('配音已生成并加入视频','success')"><i class="fa fa-magic mr-1"></i>生成并加入视频</button></div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div><label class="form-label">背景音频</label><div class="flex gap-2"><input type="text" class="form-input flex-1" placeholder="未选择" id="bgm-file" readonly><button class="btn-default" onclick="showToast('文件选择模拟','success')">选择</button></div></div>
+                                    <div><label class="form-label">音频音量</label><input type="range" class="range-slider mt-3" value="30" id="bgm-volume" oninput="document.getElementById('vol-val').textContent=this.value+'%'"><span class="text-xs text-gray-400" id="vol-val">30%</span></div>
+                                </div>
+                                <div><label class="form-label">添加文字字幕</label><textarea class="form-input" rows="2" placeholder="输入字幕内容" id="subtitle-text"></textarea></div>
+                                <button class="btn-primary w-full justify-center" onclick="startMix()"><i class="fa fa-film mr-1"></i>开始生成混剪视频</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">新视频库（待发布）</span><button class="btn-default" onclick="showToast('已全部移入发布队列','success')">全部移入发布队列</button></div>
+                        <div class="p-5">
+                            <div class="grid grid-cols-5 gap-4" id="video-library"></div>
+                            <div class="text-center text-sm text-gray-500 mt-4" id="video-lib-count">共 128 个待发布视频</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 5. 发布调度 ====== -->
+                <section class="page hidden" id="page-publish">
+                    <div class="grid grid-cols-3 gap-6 mb-6">
+                        <div class="card col-span-1">
+                            <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">发布规则设置</span></div>
+                            <div class="p-5 space-y-4">
+                                <div><label class="form-label">发布平台</label>
+                                    <div class="space-y-2">
+                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked class="rounded"> 抖音账号</label>
+                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked class="rounded"> 快手账号</label>
+                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked class="rounded"> 小红书账号</label>
+                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" checked class="rounded"> 视频号账号</label>
+                                    </div>
+                                </div>
+                                <div><label class="form-label">单账号每日发布上限</label><input type="number" class="form-input" value="3" id="daily-limit"></div>
+                                <div><label class="form-label">发布时间设置</label>
+                                    <div class="space-y-2" id="publish-times">
+                                        <div class="flex gap-2 items-center"><input type="time" class="form-input flex-1" value="09:00"><input type="time" class="form-input flex-1" value="12:30"></div>
+                                        <div class="flex gap-2 items-center"><input type="time" class="form-input flex-1" value="18:00"><button class="btn-default text-xs" onclick="addPublishTime()">+ 添加</button></div>
+                                    </div>
+                                </div>
+                                <div><label class="form-label">发布顺序</label><select class="form-input" id="publish-order"><option>按视频库顺序依次发布</option><option>随机抽取发布</option><option>按账号分组轮询</option></select></div>
+                                <div class="flex items-center gap-2"><input type="checkbox" checked class="rounded" id="auto-remove"><span class="text-sm text-gray-700">发布后自动从视频库移除</span></div>
+                                <button class="btn-primary w-full justify-center" onclick="showToast('发布规则已保存','success')"><i class="fa fa-save mr-1"></i>保存发布规则</button>
+                            </div>
+                        </div>
+                        <div class="card col-span-2">
+                            <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center">
+                                <span class="font-medium text-gray-800">待发布队列</span>
+                                <div class="flex gap-2"><button class="btn-default text-xs" onclick="showToast('已暂停全部任务','warning')">暂停全部</button><button class="btn-primary text-xs" onclick="showToast('立即执行任务...','success')">立即执行</button></div>
+                            </div>
+                            <table class="w-full"><thead><tr><th class="table-th">计划时间</th><th class="table-th">平台</th><th class="table-th">账号</th><th class="table-th">视频文件</th><th class="table-th">状态</th><th class="table-th">操作</th></tr></thead>
+                            <tbody id="publish-queue"></tbody></table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 6. 接口配置 ====== -->
+                <section class="page hidden" id="page-config">
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border">
+                            <div class="flex items-center gap-1" id="config-tabs">
+                                <div class="tab-item active" data-platform="douyin">抖音配置</div>
+                                <div class="tab-item" data-platform="kuaishou">快手配置</div>
+                                <div class="tab-item" data-platform="xiaohongshu">小红书配置</div>
+                                <div class="tab-item" data-platform="weixin">视频号配置</div>
+                            </div>
+                        </div>
+                        <div class="p-5">
+                            <p class="text-sm text-gray-500 mb-4">配置各平台接口参数，保存后自动同步至本地</p>
+                            <div id="config-form"></div>
+                            <div class="mt-4 flex gap-2">
+                                <button class="btn-primary" onclick="showToast('配置已保存','success')">保存配置</button>
+                                <button class="btn-default" onclick="showToast('已恢复默认配置','warning')">恢复默认</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ====== 7. 日志中心 ====== -->
+                <section class="page hidden" id="page-log">
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex items-center gap-4 flex-wrap">
+                            <span class="font-medium text-gray-800">日志中心</span>
+                            <select class="form-input w-28" id="client-log-filter" onchange="renderClientLogs()"><option value="">全部级别</option><option value="INFO">INFO</option><option value="WARN">WARN</option><option value="ERROR">ERROR</option></select>
+                            <input type="text" class="form-input w-48" placeholder="搜索日志..." id="client-log-search" oninput="renderClientLogs()">
+                            <button class="btn-default ml-auto" onclick="showToast('日志已导出','success')"><i class="fa fa-download mr-1"></i>一键导出</button>
+                        </div>
+                        <table class="w-full"><thead><tr><th class="table-th">时间</th><th class="table-th">级别</th><th class="table-th">模块</th><th class="table-th">详情</th></tr></thead>
+                        <tbody id="client-log-body"></tbody></table>
+                        <div class="px-5 py-3 border-t border-gray-border text-sm text-gray-500"><span id="client-log-count">共 0 条</span></div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ====== 更新弹窗 ====== -->
+    <div id="update-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('update-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">发现新版本 v1.3.0</span><button onclick="closeModal('update-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body">
+                <div class="mb-4"><span class="badge badge-blue">最新版本 v1.3.0</span><span class="text-gray-400 text-xs ml-2">当前 v1.2.0</span></div>
+                <div class="text-sm text-gray-700 font-medium mb-2">更新日志：</div>
+                <ul class="text-sm text-gray-500 space-y-1 list-disc list-inside">
+                    <li>新增视频号平台支持</li>
+                    <li>优化混剪算法，处理速度提升50%</li>
+                    <li>修复AI配音偶尔卡顿的问题</li>
+                    <li>新增批量检测账号状态功能</li>
+                </ul>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('update-modal')">稍后再说</button><button class="btn-primary" onclick="startUpdate()">立即更新</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 添加账号弹窗 ====== -->
+    <div id="add-account-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-account-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">添加平台账号</span><button onclick="closeModal('add-account-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body">
+                <div class="text-center py-6">
+                    <i class="fa fa-qrcode text-6xl text-gray-300 mb-4"></i>
+                    <div class="text-sm text-gray-500 mb-2">请使用手机扫描二维码登录</div>
+                    <div class="text-xs text-gray-400">打开对应平台APP，扫描下方二维码完成授权</div>
+                    <div class="mt-4 p-4 bg-gray-50 rounded-lg inline-block">
+                        <div class="w-32 h-32 bg-white border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 text-xs">二维码区域</div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400"><i class="fa fa-spinner fa-spin mr-1"></i>等待扫码中...</div>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('add-account-modal')">取消</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 编辑账号弹窗 ====== -->
+    <div id="edit-account-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('edit-account-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">编辑账号</span><button onclick="closeModal('edit-account-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body space-y-4">
+                <div><label class="form-label">账号昵称</label><input type="text" class="form-input" id="edit-acct-name"></div>
+                <div><label class="form-label">平台</label><input type="text" class="form-input" id="edit-acct-platform" readonly></div>
+                <div><label class="form-label">备注</label><textarea class="form-input" rows="2" placeholder="添加备注信息" id="edit-acct-note"></textarea></div>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('edit-account-modal')">取消</button><button class="btn-primary" onclick="saveAccountEdit()">保存</button></div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+    // ====== 数据 ======
+    const state = {
+        accounts: {
+            douyin: [
+                {name:'美食探店号01',status:'正常',works:128,plays:'45.2w',todayPub:'2/3',lastLogin:'2026-06-22 08:30'},
+                {name:'美食探店号02',status:'正常',works:86,plays:'23.1w',todayPub:'1/3',lastLogin:'2026-06-22 09:15'},
+                {name:'哈尔滨吃货',status:'正常',works:65,plays:'18.7w',todayPub:'0/3',lastLogin:'2026-06-21 18:00'},
+                {name:'东北老铁探店',status:'登录失效',works:42,plays:'12.3w',todayPub:'0/3',lastLogin:'2026-06-18 10:00'}
+            ],
+            kuaishou: [
+                {name:'吃货阿凯',status:'正常',works:56,plays:'15.6w',todayPub:'2/3',lastLogin:'2026-06-22 07:45'},
+                {name:'街头美食',status:'正常',works:34,plays:'8.9w',todayPub:'1/3',lastLogin:'2026-06-22 08:00'}
+            ],
+            xiaohongshu: [
+                {name:'哈尔滨美食攻略',status:'正常',works:92,plays:'32.5w',todayPub:'3/3',lastLogin:'2026-06-22 09:30'},
+                {name:'吃货日记',status:'正常',works:78,plays:'28.1w',todayPub:'2/3',lastLogin:'2026-06-22 08:20'},
+                {name:'本地探店',status:'正常',works:45,plays:'12.8w',todayPub:'1/3',lastLogin:'2026-06-22 09:00'}
+            ],
+            weixin: [
+                {name:'本地美食指南',status:'正常',works:56,plays:'7.2w',todayPub:'1/2',lastLogin:'2026-06-22 09:10'},
+                {name:'舌尖上的哈尔滨',status:'正常',works:28,plays:'3.5w',todayPub:'0/2',lastLogin:'2026-06-21 15:00'}
+            ]
+        },
+        videoLib: [
+            {name:'1-1_2-1混剪.mp4',size:'15.2MB'},{name:'1-1_3-1混剪.mp4',size:'14.8MB'},{name:'1-1_4-1混剪.mp4',size:'16.1MB'},
+            {name:'2-1_3-2混剪.mp4',size:'13.5MB'},{name:'2-2_4-1混剪.mp4',size:'15.8MB'},{name:'3-1_5-1混剪.mp4',size:'14.2MB'}
+        ],
+        publishQueue: [
+            {time:'2026-06-22 12:30',platform:'douyin',platformName:'抖音',account:'账号01',video:'1-2_3-4混剪.mp4',status:'等待发布'},
+            {time:'2026-06-22 18:00',platform:'wechat',platformName:'视频号',account:'本地美食指南',video:'3-3_5-1混剪.mp4',status:'等待发布'},
+            {time:'2026-06-22 09:00',platform:'douyin',platformName:'抖音',account:'美食探店号02',video:'1-1_2-3混剪.mp4',status:'发布成功'},
+            {time:'2026-06-22 09:00',platform:'xiaohongshu',platformName:'小红书',account:'哈尔滨美食攻略',video:'2-1_4-2混剪.mp4',status:'发布成功'},
+            {time:'2026-06-22 09:00',platform:'kuaishou',platformName:'快手',account:'吃货阿凯',video:'1-3_5-1混剪.mp4',status:'发布失败'}
+        ],
+        recentPublish: [
+            {platform:'douyin',platformName:'抖音',account:'账号01',video:'1-1_2-3混剪.mp4',status:'发布成功'},
+            {platform:'wechat',platformName:'视频号',account:'美食号01',video:'2-2_4-1混剪.mp4',status:'发布成功'},
+            {platform:'kuaishou',platformName:'快手',account:'吃货阿凯',video:'3-1_5-2混剪.mp4',status:'发布失败'}
+        ],
+        alerts: [
+            {type:'danger',title:'抖音账号08 登录失效',desc:'Cookie已过期，请重新扫码登录'},
+            {type:'warning',title:'快手账号03 Cookie即将过期',desc:'预计2天后过期，建议提前更新'}
+        ],
+        platformData: [
+            {platform:'douyin',name:'抖音',accounts:10,plays:'68.2w',likes:'1.85w',comments:856,shares:423,avg:6820},
+            {platform:'kuaishou',name:'快手',accounts:5,plays:'24.5w',likes:'0.62w',comments:312,shares:186,avg:4900},
+            {platform:'xiaohongshu',name:'小红书',accounts:20,plays:'28.7w',likes:'0.58w',comments:352,shares:215,avg:1435},
+            {platform:'wechat',name:'视频号',accounts:3,plays:'7.2w',likes:'0.19w',comments:66,shares:68,avg:2400}
+        ],
+        videoDetails: [
+            {platform:'douyin',name:'抖音',account:'美食探店号01',title:'哈尔滨这家藏在胡同里的老菜馆，人均30吃到撑',plays:12586,likes:328,comments:86,shares:42,time:'2026-06-21 18:00'},
+            {platform:'wechat',name:'视频号',account:'本地美食指南',title:'周末去哪吃？这5家小店一定要打卡',plays:8962,likes:215,comments:32,shares:58,time:'2026-06-21 12:30'},
+            {platform:'kuaishou',name:'快手',account:'吃货阿凯',title:'100元吃遍师大夜市，能吃多少样？',plays:7654,likes:198,comments:45,shares:23,time:'2026-06-20 19:00'},
+            {platform:'xiaohongshu',name:'小红书',account:'哈尔滨美食攻略',title:'本地人私藏的8家宝藏早餐店',plays:3256,likes:126,comments:28,shares:19,time:'2026-06-20 09:00'}
+        ],
+        clientLogs: [
+            {time:'2026-06-22 09:25',level:'ERROR',module:'发布模块',detail:'抖音账号08 登录失效，发布任务失败'},
+            {time:'2026-06-22 09:20',level:'WARN',module:'账号管理',detail:'快手账号03 Cookie将在2天后过期'},
+            {time:'2026-06-22 09:15',level:'INFO',module:'视频处理',detail:'混剪视频 1-1_2-1混剪.mp4 生成完成 (15.2MB)'},
+            {time:'2026-06-22 09:12',level:'INFO',module:'用户登录',detail:'用户 运营员小张 登录成功'},
+            {time:'2026-06-22 09:10',level:'INFO',module:'系统启动',detail:'环境自检通过：FFmpeg ✓ Chromium ✓ 运行库 ✓ 网络 ✓'},
+            {time:'2026-06-22 09:08',level:'INFO',module:'系统启动',detail:'短视频矩阵运营系统 v1.2.0 启动'},
+            {time:'2026-06-21 18:30',level:'INFO',module:'发布模块',detail:'成功发布 3 条视频到小红书平台'},
+            {time:'2026-06-21 17:45',level:'WARN',module:'数据回收',detail:'快手平台数据回收超时，已自动重试'},
+            {time:'2026-06-21 16:00',level:'ERROR',module:'AI配音',detail:'配音接口调用失败：今日配额已用尽'}
+        ],
+        platformConfigs: {
+            douyin:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://creator.douyin.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://creator.douyin.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://creator.douyin.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://creator.douyin.com/api/publish'},
+                {label:'元素选择器-发布按钮',key:'publishBtn',value:'.publish-btn'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'30'}
+            ],
+            kuaishou:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://cp.kuaishou.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://cp.kuaishou.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://cp.kuaishou.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://cp.kuaishou.com/api/publish'},
+                {label:'元素选择器-发布按钮',key:'publishBtn',value:'.upload-btn'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'15'}
+            ],
+            xiaohongshu:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://creator.xiaohongshu.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://creator.xiaohongshu.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://creator.xiaohongshu.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://creator.xiaohongshu.com/api/publish'},
+                {label:'元素选择器-发布按钮',key:'publishBtn',value:'.submit-btn'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'7'}
+            ],
+            weixin:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://channels.weixin.qq.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://channels.weixin.qq.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://channels.weixin.qq.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://channels.weixin.qq.com/api/publish'},
+                {label:'元素选择器-发布按钮',key:'publishBtn',value:'.post-btn'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'30'}
+            ]
+        },
+        currentPlatform: 'douyin',
+        currentAcctPlatform: 'douyin'
+    };
+
+    // ====== 工具函数 ======
+    function showToast(msg,type='success'){
+        const t=document.createElement('div');t.className=`toast ${type}`;
+        t.innerHTML=`<i class="fa fa-${type==='success'?'check-circle':type==='error'?'exclamation-circle':'info-circle'} mr-2"></i>${msg}`;
+        document.getElementById('toast-container').appendChild(t);setTimeout(()=>t.remove(),3000);
+    }
+    function openModal(id){document.getElementById(id).classList.remove('hidden')}
+    function closeModal(id){document.getElementById(id).classList.add('hidden')}
+    function platformTag(p){
+        const m={douyin:['抖音','platform-douyin'],kuaishou:['快手','platform-kuaishou'],xiaohongshu:['小红书','platform-xiaohongshu'],wechat:['视频号','platform-wechat']};
+        const [name,cls]=m[p]||['未知','badge-gray'];return `<span class="platform-tag ${cls}">${name}</span>`;
+    }
+    function statusTag(s){
+        if(s==='发布成功')return `<span class="badge badge-green">${s}</span>`;
+        if(s==='发布失败')return `<span class="badge badge-red">${s}</span>`;
+        if(s==='等待发布')return `<span class="badge badge-orange">${s}</span>`;
+        if(s==='正常')return `<span class="badge badge-green">${s}</span>`;
+        if(s==='登录失效')return `<span class="badge badge-red">${s}</span>`;
+        return `<span class="badge badge-gray">${s}</span>`;
+    }
+
+    // ====== 渲染函数 ======
+    function renderDashboard(){
+        document.getElementById('dashboard-recent').innerHTML=state.recentPublish.map(r=>`<tr><td class="table-td">${platformTag(r.platform)}</td><td class="table-td">${r.account}</td><td class="table-td">${r.video}</td><td class="table-td">${statusTag(r.status)}</td></tr>`).join('');
+        document.getElementById('dashboard-alerts').innerHTML=state.alerts.map(a=>`<div class="p-3 ${a.type==='danger'?'bg-danger/5 border-danger/20':'bg-warning/5 border-warning/20'} border rounded-md"><div class="text-sm ${a.type==='danger'?'text-danger':'text-warning'} font-medium">${a.title}</div><div class="text-xs text-gray-500 mt-1">${a.desc}</div></div>`).join('');
+    }
+    function renderAnalysis(){
+        document.getElementById('analysis-platform').innerHTML=state.platformData.map(p=>`<tr><td class="table-td">${platformTag(p.platform)}</td><td class="table-td">${p.accounts}</td><td class="table-td">${p.plays}</td><td class="table-td">${p.likes}</td><td class="table-td">${p.comments}</td><td class="table-td">${p.shares}</td><td class="table-td">${p.avg}</td></tr>`).join('')+
+            `<tr class="bg-gray-50 font-medium"><td class="table-td">合计</td><td class="table-td">38</td><td class="table-td">128.6w</td><td class="table-td">3.24w</td><td class="table-td">1586</td><td class="table-td">892</td><td class="table-td">-</td></tr>`;
+        document.getElementById('analysis-videos').innerHTML=state.videoDetails.map((v,i)=>`<tr><td class="table-td text-gray-400">${i+1}</td><td class="table-td">${platformTag(v.platform)}</td><td class="table-td">${v.account}</td><td class="table-td max-w-xs truncate" title="${v.title}">${v.title}</td><td class="table-td">${v.plays}</td><td class="table-td">${v.likes}</td><td class="table-td">${v.comments}</td><td class="table-td">${v.shares}</td><td class="table-td text-gray-500">${v.time}</td></tr>`).join('');
+    }
+    function renderAccounts(){
+        const accts=state.accounts[state.currentAcctPlatform]||[];
+        document.getElementById('account-table-body').innerHTML=accts.map((a,i)=>`<tr><td class="table-td"><input type="checkbox" class="rounded"></td><td class="table-td"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">${a.name[0]}</div><span>${a.name}</span></div></td><td class="table-td">${statusTag(a.status)}</td><td class="table-td">${a.works}</td><td class="table-td">${a.plays}</td><td class="table-td">${a.todayPub}</td><td class="table-td text-gray-500">${a.lastLogin}</td><td class="table-td"><button class="text-primary text-xs mr-2" onclick="openEditAccount('${state.currentAcctPlatform}',${i})">编辑</button><button class="text-gray-500 text-xs mr-2" onclick="showToast('查看数据','success')">数据</button><button class="text-danger text-xs" onclick="deleteAccount('${state.currentAcctPlatform}',${i})">删除</button></td></tr>`).join('');
+        document.getElementById('account-count').textContent=`共 ${accts.length} 条记录`;
+    }
+    function renderVideoLib(){
+        document.getElementById('video-library').innerHTML=state.videoLib.map(v=>`<div class="video-card"><div class="preview"><i class="fa fa-play-circle text-2xl"></i></div><div class="p-2"><div class="text-xs truncate">${v.name}</div><div class="text-xs text-gray-400 mt-1">${v.size}</div></div></div>`).join('');
+        document.getElementById('video-lib-count').textContent=`共 ${state.videoLib.length} 个待发布视频`;
+    }
+    function renderPublishQueue(){
+        document.getElementById('publish-queue').innerHTML=state.publishQueue.map((q,i)=>{
+            const actionBtns=q.status==='等待发布'?`<button class="text-primary text-xs mr-2" onclick="publishNow(${i})">立即发布</button><button class="text-gray-500 text-xs" onclick="cancelPublish(${i})">取消</button>`:q.status==='发布成功'?`<span class="text-xs text-gray-400">已完成</span>`:`<button class="text-primary text-xs" onclick="retryPublish(${i})">重试</button>`;
+            return `<tr><td class="table-td text-gray-500">${q.time}</td><td class="table-td">${platformTag(q.platform)}</td><td class="table-td">${q.account}</td><td class="table-td text-gray-500">${q.video}</td><td class="table-td">${statusTag(q.status)}</td><td class="table-td">${actionBtns}</td></tr>`;
+        }).join('');
+    }
+    function renderConfigForm(){
+        const cfg=state.platformConfigs[state.currentPlatform];
+        document.getElementById('config-form').innerHTML=`<div class="grid grid-cols-2 gap-4">${cfg.map(f=>`<div><label class="form-label">${f.label}</label><input type="text" class="form-input" value="${f.value}" data-key="${f.key}"></div>`).join('')}</div>`;
+    }
+    function renderClientLogs(){
+        const level=document.getElementById('client-log-filter').value;
+        const search=document.getElementById('client-log-search').value.toLowerCase();
+        const filtered=state.clientLogs.filter(l=>(!level||l.level===level)&&(!search||l.detail.toLowerCase().includes(search)||l.module.toLowerCase().includes(search)));
+        document.getElementById('client-log-body').innerHTML=filtered.map(l=>{
+            const cls=l.level==='ERROR'?'badge-red':l.level==='WARN'?'badge-orange':'badge-gray';
+            return `<tr><td class="table-td text-gray-500 text-xs">${l.time}</td><td class="table-td"><span class="badge ${cls}">${l.level}</span></td><td class="table-td">${l.module}</td><td class="table-td text-gray-500">${l.detail}</td></tr>`;
+        }).join('');
+        document.getElementById('client-log-count').textContent=`共 ${filtered.length} 条`;
+    }
+
+    // ====== 交互函数 ======
+    function doLogin(){
+        const user=document.getElementById('login-user').value.trim();
+        const pass=document.getElementById('login-pass').value;
+        if(!user){showToast('请输入用户名','error');return}
+        if(!pass){showToast('请输入密码','error');return}
+        if(user==='admin'&&pass==='123456'){
+            document.getElementById('login-box').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            document.getElementById('display-user').textContent=user;
+            showToast('登录成功');
+        }else{
+            showToast('账号或密码错误','error');
+        }
+    }
+    function doLogout(){
+        document.getElementById('main-app').classList.add('hidden');
+        document.getElementById('login-box').classList.remove('hidden');
+        showToast('已退出登录');
+    }
+    function switchPage(page){
+        document.querySelectorAll('.sidebar-item').forEach(i=>i.classList.remove('active'));
+        document.querySelector(`.sidebar-item[data-page="${page}"]`).classList.add('active');
+        document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+        document.getElementById('page-'+page).classList.remove('hidden');
+        const titles={dashboard:'数据总览',analysis:'数据分析',account:'账号管理',video:'视频处理',publish:'发布调度',config:'接口配置',log:'日志中心'};
+        document.getElementById('page-title').textContent=titles[page]||'';
+    }
+    function handleUpload(input){
+        if(input.files.length>0){
+            document.getElementById('upload-status').textContent=`已选择 ${input.files.length} 个文件`;
+            showToast(`已选择 ${input.files.length} 个视频文件`);
+        }
+    }
+    function startCut(){
+        const segs=document.getElementById('cut-segments').value;
+        showToast(`正在裁切视频为 ${segs} 段...`);
+        setTimeout(()=>showToast('裁切完成！生成 15 个片段','success'),2000);
+    }
+    function startMix(){
+        showToast('正在生成混剪视频...');
+        setTimeout(()=>{
+            state.videoLib.push({name:`混剪_${Date.now()}.mp4`,size:(Math.random()*10+10).toFixed(1)+'MB'});
+            renderVideoLib();showToast('混剪视频生成完成！','success');
+        },2000);
+    }
+    function addPublishTime(){
+        const container=document.getElementById('publish-times');
+        const div=document.createElement('div');div.className='flex gap-2 items-center';
+        div.innerHTML=`<input type="time" class="form-input flex-1" value="21:00"><button class="btn-default text-xs" onclick="this.parentElement.remove()">删除</button>`;
+        container.appendChild(div);
+    }
+    function publishNow(i){
+        state.publishQueue[i].status='发布中...';renderPublishQueue();
+        setTimeout(()=>{state.publishQueue[i].status='发布成功';renderPublishQueue();showToast('发布成功','success')},1500);
+    }
+    function cancelPublish(i){
+        state.publishQueue.splice(i,1);renderPublishQueue();showToast('已取消任务','warning');
+    }
+    function retryPublish(i){
+        state.publishQueue[i].status='等待发布';renderPublishQueue();showToast('已重新加入队列');
+    }
+    function openEditAccount(platform,i){
+        const acct=state.accounts[platform][i];
+        document.getElementById('edit-acct-name').value=acct.name;
+        const pNames={douyin:'抖音',kuaishou:'快手',xiaohongshu:'小红书',weixin:'视频号'};
+        document.getElementById('edit-acct-platform').value=pNames[platform]||platform;
+        openModal('edit-account-modal');
+    }
+    function saveAccountEdit(){
+        closeModal('edit-account-modal');showToast('账号信息已更新');
+    }
+    function deleteAccount(platform,i){
+        if(!confirm('确认删除该账号？'))return;
+        state.accounts[platform].splice(i,1);renderAccounts();showToast('账号已删除','warning');
+    }
+    function startUpdate(){
+        closeModal('update-modal');showToast('正在下载更新...');
+        setTimeout(()=>showToast('更新完成，即将重启','success'),3000);
+    }
+
+    // ====== 事件绑定 ======
+    // 侧边栏
+    document.getElementById('sidebar').addEventListener('click',e=>{
+        const item=e.target.closest('.sidebar-item');if(!item)return;
+        switchPage(item.dataset.page);
+    });
+    // 账号管理Tab
+    document.getElementById('account-tabs').addEventListener('click',e=>{
+        const tab=e.target.closest('.tab-item');if(!tab)return;
+        document.querySelectorAll('#account-tabs .tab-item').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');state.currentAcctPlatform=tab.dataset.platform;renderAccounts();
+    });
+    // 接口配置Tab
+    document.getElementById('config-tabs').addEventListener('click',e=>{
+        const tab=e.target.closest('.tab-item');if(!tab)return;
+        document.querySelectorAll('#config-tabs .tab-item').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');state.currentPlatform=tab.dataset.platform;renderConfigForm();
+    });
+    // 时间范围按钮
+    document.getElementById('time-range-btns').addEventListener('click',e=>{
+        const btn=e.target.closest('button');if(!btn)return;
+        document.querySelectorAll('#time-range-btns button').forEach(b=>{b.className='px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50'});
+        btn.className='px-3 py-1.5 text-xs bg-primary text-white';
+        showToast(`已切换到${btn.textContent}`);
+    });
+    // 登录回车
+    document.getElementById('login-pass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+
+    // ====== 环境自检模拟 ======
+    function simulateEnvCheck(){
+        const bar=document.getElementById('env-progress');
+        const status=document.getElementById('env-status');
+        const checks=[
+            {text:'检测 FFmpeg...',pct:20},{text:'检测 Chromium 内核...',pct:40},
+            {text:'检测系统运行库...',pct:60},{text:'检测网络连通性...',pct:80},{text:'环境自检通过 ✓',pct:100}
+        ];
+        let i=0;
+        const timer=setInterval(()=>{
+            if(i<checks.length){
+                bar.style.width=checks[i].pct+'%';status.textContent=checks[i].text;i++;
+            }else{
+                clearInterval(timer);
+                document.getElementById('env-check').classList.add('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+            }
+        },500);
+    }
+
+    // ====== 初始化 ======
+    renderDashboard();renderAnalysis();renderAccounts();renderVideoLib();renderPublishQueue();renderConfigForm();renderClientLogs();
+    simulateEnvCheck();
+    </script>
+</body>
+</html>
