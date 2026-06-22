@@ -49,7 +49,7 @@ class LoginView(QWidget):
 
         # card
         card = QFrame()
-        card.setFixedSize(420, 520)
+        card.setFixedSize(420, 600)
         card.setStyleSheet(f"""
             QFrame {{
                 background: white;
@@ -72,7 +72,31 @@ class LoginView(QWidget):
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         card_layout.addWidget(subtitle)
 
-        card_layout.addSpacing(16)
+        card_layout.addSpacing(8)
+
+        # server address
+        server_label = QLabel("服务器地址")
+        server_label.setStyleSheet(f"font-size: 13px; color: {TEXT_COLOR}; font-weight: 600;")
+        card_layout.addWidget(server_label)
+
+        self._server_input = QLineEdit()
+        self._server_input.setPlaceholderText("例如: https://sp.tthsdd.top/api")
+        self._server_input.setStyleSheet(INPUT_STYLE)
+        self._server_input.setMinimumHeight(40)
+        # load saved server url
+        from pathlib import Path
+        import json as _json
+        cfg_path = Path.home() / ".video-matrix" / "config.json"
+        saved_url = ""
+        if cfg_path.exists():
+            try:
+                saved_url = _json.loads(cfg_path.read_text()).get("server_url", "")
+            except Exception:
+                pass
+        self._server_input.setText(saved_url)
+        card_layout.addWidget(self._server_input)
+
+        card_layout.addSpacing(8)
 
         # username
         self._user_input = QLineEdit()
@@ -171,9 +195,31 @@ class LoginView(QWidget):
     def _on_login(self):
         username = self._user_input.text().strip()
         password = self._pass_input.text().strip()
+        server_url = self._server_input.text().strip().rstrip('/')
+
+        if not server_url:
+            self._error_label.setText("请输入服务器地址")
+            return
         if not username or not password:
             self._error_label.setText("请输入用户名和密码")
             return
+
+        # save server url
+        from pathlib import Path
+        import json as _json
+        cfg_dir = Path.home() / ".video-matrix"
+        cfg_dir.mkdir(exist_ok=True)
+        cfg_path = cfg_dir / "config.json"
+        cfg = {}
+        if cfg_path.exists():
+            try:
+                cfg = _json.loads(cfg_path.read_text())
+            except Exception:
+                pass
+        cfg["server_url"] = server_url
+        cfg_path.write_text(_json.dumps(cfg, ensure_ascii=False, indent=2))
+        from .. import api
+        api.BASE_URL = server_url
 
         self._error_label.setText("")
         self._login_btn.setEnabled(False)

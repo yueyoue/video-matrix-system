@@ -6,8 +6,19 @@ from typing import Any
 
 from .auth import auth
 
-# Allow overriding via environment variable
-BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:3000/api")
+# Allow overriding via environment variable or config file
+import json as _json
+from pathlib import Path as _Path
+
+_cfg_path = _Path.home() / ".video-matrix" / "config.json"
+_saved_url = ""
+if _cfg_path.exists():
+    try:
+        _saved_url = _json.loads(_cfg_path.read_text()).get("server_url", "")
+    except Exception:
+        pass
+
+BASE_URL = os.environ.get("API_BASE_URL", _saved_url or "http://localhost:3000/api")
 _TIMEOUT = 15
 
 

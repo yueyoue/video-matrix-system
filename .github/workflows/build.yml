@@ -14,21 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Build Web Admin
         run: cd web-admin && npm ci && npm run build
-
       - name: Package
         run: |
-          cd server && npm ci --omit=dev && cd ..
-          zip -r server.zip server/ -x "server/node_modules/.cache/*"
+          zip -r server.zip server/ -x "server/uploads/*"
           cd web-admin/dist && zip -r ../../web-admin.zip . && cd ../..
           zip -r client.zip client/ -x "client/__pycache__/*" "client/**/*.pyc"
-
       - name: Get version
         id: version
         run: |
@@ -37,7 +32,6 @@ jobs:
           else
             echo "tag=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
           fi
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -45,15 +39,9 @@ jobs:
           name: "Release ${{ steps.version.outputs.tag }}"
           body: |
             ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
-            
-            ### 下载说明
-            - `VideoMatrix.exe` - 桌面客户端 Windows 版 (见下方 Windows 构建)
-            - `server.zip` - 后端API服务 (解压后 `npm install --production && npm start`)
-            - `web-admin.zip` - Web管理后台 (Nginx部署)
-            
-            ### 默认账号
-            - 管理员: admin / admin123
-            - 运营员: operator1 / 123456
+            - `VideoMatrix.zip` - 桌面客户端 Windows 版 (解压后运行 VideoMatrix.exe)
+            - `server.zip` - 后端API (PHP+MySQL，上传到宝塔访问域名/install安装)
+            - `web-admin.zip` - Web管理后台 (解压到网站根目录)
           files: |
             server.zip
             web-admin.zip
@@ -66,24 +54,29 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install PyInstaller & deps
+      - name: Install deps
         run: |
-          cd client
           pip install pyinstaller PyQt6 requests
-
-      - name: Build exe
+      - name: Build exe (onedir mode)
         run: |
-          cd client
-          pyinstaller --noconfirm --onefile --windowed --name VideoMatrix main.py
+          pyinstaller --noconfirm --onedir --windowed --name VideoMatrix --noconsole --collect-all PyQt6 main.py
         shell: cmd
-
+        working-directory: client
+      - name: Create launcher bat
+        run: |
+          echo @echo off > client\dist\VideoMatrix\启动客户端.bat
+          echo start VideoMatrix.exe >> client\dist\VideoMatrix\启动客户端.bat
+        shell: cmd
+      - name: Zip dist
+        run: |
+          cd client/dist
+          powershell Compress-Archive -Path VideoMatrix -DestinationPath ../../VideoMatrix.zip -Force
+        shell: bash
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: client/dist/VideoMatrix.exe
+          files: client/VideoMatrix.zip

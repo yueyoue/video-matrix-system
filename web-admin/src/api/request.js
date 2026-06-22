@@ -29,25 +29,14 @@ api.interceptors.response.use(
   },
   error => {
     if (error.response) {
-      const { status } = error.response
+      const { status, data } = error.response
       if (status === 401) {
         localStorage.removeItem('token')
         localStorage.removeItem('user')
         router.push('/login')
-        return Promise.reject(new Error('登录已过期，请重新登录'))
       }
-      if (status === 403) {
-        return Promise.reject(new Error('没有权限执行此操作'))
-      }
-      if (status === 500) {
-        return Promise.reject(new Error('服务器内部错误'))
-      }
-    }
-    if (error.code === 'ECONNABORTED') {
-      return Promise.reject(new Error('请求超时，请稍后重试'))
-    }
-    if (!error.response) {
-      return Promise.reject(new Error('网络连接失败，请检查网络'))
+      const msg = data?.message || `请求失败 (${status})`
+      return Promise.reject(new Error(msg))
     }
     return Promise.reject(error)
   }
