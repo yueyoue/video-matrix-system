@@ -10,55 +10,31 @@ permissions:
   contents: write
 
 jobs:
-  build-server:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install server deps
-        run: cd server && npm ci
-      - name: Package server
-        run: |
-          cd server
-          npm ci --omit=dev
-          zip -r ../server.zip . -x ".git" "node_modules/.cache"
 
-  build-web-admin:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install & Build
+
+      - name: Build Web Admin
         run: |
           cd web-admin
           npm ci
           npm run build
-      - name: Package
-        run: cd web-admin/dist && zip -r ../../web-admin.zip .
 
-  build-client:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Package client
+      - name: Package all
         run: |
-          cd client
-          zip -r ../client.zip . -x ".git" "__pycache__" "*.pyc"
+          # Server
+          cd server && npm ci --omit=dev && cd ..
+          zip -r server.zip server/ -x "server/node_modules/.cache/*"
+          # Web Admin (built files)
+          cd web-admin/dist && zip -r ../../web-admin.zip . && cd ../..
+          # Client
+          zip -r client.zip client/ -x "client/__pycache__/*" "client/**/*.pyc"
 
-  release:
-    needs: [build-server, build-web-admin, build-client]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
       - name: Get version
         id: version
         run: |
@@ -67,6 +43,7 @@ jobs:
           else
             echo "tag=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
           fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -76,11 +53,16 @@ jobs:
             ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
             
             ### 下载说明
-            - `server.zip` - 后端API服务 (解压后 `npm install && npm start`)
-            - `web-admin.zip` - Web管理后台 (Nginx部署或 `npm run dev`)
+            - `server.zip` - 后端API服务 (解压后 `npm install --production && npm start`)
+            - `web-admin.zip` - Web管理后台 (Nginx部署，或 `npm run dev`)
             - `client.zip` - 桌面客户端 (解压后 `pip install -r requirements.txt && python main.py`)
+            
+            ### 默认账号
+            - 管理员: admin / admin123
+            - 运营员: operator1 / 123456
           files: |
             server.zip
             web-admin.zip
             client.zip
           draft: false
+          prerelease: false
