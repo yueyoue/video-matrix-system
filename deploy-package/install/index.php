@@ -656,6 +656,11 @@ function handleInstall()
                         <div class="check-name">config.php 不存在（可安装）</div>
                         <div class="check-status" id="check-config-status">检测中...</div>
                     </li>
+                    <li class="check-item" id="check-writable">
+                        <div class="check-icon">⏱</div>
+                        <div class="check-name">网站根目录可写（需创建 config.php）</div>
+                        <div class="check-status" id="check-writable-status">检测中...</div>
+                    </li>
                 </ul>
 
                 <div class="btn-group" style="justify-content: flex-end">
@@ -830,6 +835,7 @@ function handleInstall()
             { id: 'json', pass: <?php echo extension_loaded('json') ? 'true' : 'false'; ?>, detail: '<?php echo extension_loaded('json') ? '已安装' : '未安装'; ?>' },
             { id: 'upload', pass: <?php echo is_writable(__DIR__ . '/../uploads') ? 'true' : 'false'; ?>, detail: '<?php echo is_writable(__DIR__ . '/../uploads') ? '可写' : '不可写'; ?>' },
             { id: 'config', pass: <?php echo !file_exists(__DIR__ . '/../config.php') ? 'true' : 'false'; ?>, detail: '<?php echo file_exists(__DIR__ . '/../config.php') ? '已存在（需删除）' : '不存在（可安装）'; ?>' },
+            { id: 'writable', pass: <?php echo is_writable(__DIR__ . '/..') ? 'true' : 'false'; ?>, detail: '<?php echo is_writable(__DIR__ . '/..') ? '可写' : '不可写（需 chmod 755 或 chown www-data）'; ?>' },
         ];
 
         let allPass = true;
@@ -850,7 +856,7 @@ function handleInstall()
                 }
 
                 // 最后一个检测完成后
-                if (check.id === 'config') {
+                if (check.id === 'writable') {
                     setTimeout(() => {
                         document.getElementById('btnStep1Next').disabled = !allPass;
                         if (!allPass) {
