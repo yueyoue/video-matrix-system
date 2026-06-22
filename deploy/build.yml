@@ -1,0 +1,48 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Package Web Admin
+        run: cd web-admin && zip -r ../web-admin.zip .
+
+      - name: Package Client
+        run: cd client && zip -r ../client.zip .
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Release ${{ steps.version.outputs.tag }}"
+          body: |
+            ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
+            - Web管理后台 & 桌面客户端 UI 原型
+            - `web-admin.zip` - 解压后浏览器打开 index.html
+            - `client.zip` - 解压后浏览器打开 index.html
+          files: |
+            web-admin.zip
+            client.zip
+          draft: false
+          prerelease: false
