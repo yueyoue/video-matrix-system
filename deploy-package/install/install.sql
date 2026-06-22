@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS `{prefix}video_task` (
   `duration` INT DEFAULT 0,
   `type` ENUM('cut','mix') NOT NULL,
   `status` ENUM('pending','processing','done','failed') DEFAULT 'pending',
-  `source_ids` JSON,
-  `config` JSON,
+  `source_ids` TEXT,
+  `config` TEXT,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}ai_config` (
 CREATE TABLE IF NOT EXISTS `{prefix}platform_config` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `platform` VARCHAR(20) NOT NULL UNIQUE,
-  `config_json` JSON,
+  `config_json` TEXT,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS `{prefix}operation_log` (
 CREATE TABLE IF NOT EXISTS `{prefix}publish_rule` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `user_id` INT NOT NULL,
-  `platforms` JSON,
+  `platforms` TEXT,
   `daily_limit` INT DEFAULT 3,
-  `publish_times` JSON,
+  `publish_times` TEXT,
   `order_mode` VARCHAR(20) DEFAULT 'sequence',
   `auto_remove` TINYINT DEFAULT 1,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
