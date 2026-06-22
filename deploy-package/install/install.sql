@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS `{prefix}sys_user` (
   `used_quota` INT DEFAULT 0,
   `status` ENUM('active','disabled') DEFAULT 'active',
   `last_login` DATETIME,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}platform_account` (
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}platform_account` (
   `total_plays` BIGINT DEFAULT 0,
   `today_publish` VARCHAR(20) DEFAULT '0/3',
   `last_login` DATETIME,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}video_task` (
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}video_task` (
   `status` ENUM('pending','processing','done','failed') DEFAULT 'pending',
   `source_ids` JSON,
   `config` JSON,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}publish_record` (
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}publish_record` (
   `published_time` DATETIME,
   `status` ENUM('waiting','publishing','success','failed') DEFAULT 'waiting',
   `error_msg` TEXT,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}video_data` (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}video_data` (
   `comments` INT DEFAULT 0,
   `shares` INT DEFAULT 0,
   `publish_time` DATETIME,
-  `synced_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `synced_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}ai_voice` (
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}ai_voice` (
   `type` ENUM('male','female') DEFAULT 'female',
   `scene` VARCHAR(200),
   `status` ENUM('active','disabled') DEFAULT 'active',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}ai_config` (
@@ -88,14 +88,14 @@ CREATE TABLE IF NOT EXISTS `{prefix}ai_config` (
   `app_id` VARCHAR(100),
   `secret_key` VARCHAR(255),
   `daily_limit` INT DEFAULT 100,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}platform_config` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `platform` VARCHAR(20) NOT NULL UNIQUE,
   `config_json` JSON,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}app_version` (
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}app_version` (
   `changelog` TEXT,
   `download_url` VARCHAR(500),
   `status` ENUM('current','archived','delisted') DEFAULT 'current',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}operation_log` (
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}operation_log` (
   `module` VARCHAR(50),
   `action` VARCHAR(100),
   `detail` TEXT,
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_created` (`created_at`),
   INDEX `idx_level` (`level`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}publish_rule` (
   `publish_times` JSON,
   `order_mode` VARCHAR(20) DEFAULT 'sequence',
   `auto_remove` TINYINT DEFAULT 1,
-  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 初始数据
