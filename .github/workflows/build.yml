@@ -20,16 +20,14 @@ jobs:
           node-version: '20'
 
       - name: Build Web Admin
-        run: |
-          cd web-admin
-          npm ci
-          npm run build
+        run: cd web-admin && npm ci && npm run build
 
-      - name: Package server & web-admin
+      - name: Package
         run: |
           cd server && npm ci --omit=dev && cd ..
           zip -r server.zip server/ -x "server/node_modules/.cache/*"
           cd web-admin/dist && zip -r ../../web-admin.zip . && cd ../..
+          zip -r client.zip client/ -x "client/__pycache__/*" "client/**/*.pyc"
 
       - name: Get version
         id: version
@@ -49,7 +47,7 @@ jobs:
             ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
             
             ### 下载说明
-            - `VideoMatrixSetup.exe` - 桌面客户端 Windows 安装包
+            - `VideoMatrix.exe` - 桌面客户端 Windows 版 (见下方 Windows 构建)
             - `server.zip` - 后端API服务 (解压后 `npm install --production && npm start`)
             - `web-admin.zip` - Web管理后台 (Nginx部署)
             
@@ -59,10 +57,12 @@ jobs:
           files: |
             server.zip
             web-admin.zip
+            client.zip
           draft: false
           prerelease: false
 
-  build-client-windows:
+  build-windows:
+    needs: build
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,27 +71,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install PyInstaller & deps
         run: |
           cd client
           pip install pyinstaller PyQt6 requests
 
-      - name: Build exe with PyInstaller
+      - name: Build exe
         run: |
           cd client
-          pyinstaller --noconfirm --onedir --windowed ^
-            --name "VideoMatrix" ^
-            --icon "app/assets/icon.ico" ^
-            --add-data "app;app" ^
-            --hidden-import PyQt6.QtWidgets ^
-            --hidden-import PyQt6.QtCore ^
-            --hidden-import PyQt6.QtGui ^
-            main.py
+          pyinstaller --noconfirm --onefile --windowed --name VideoMatrix main.py
         shell: cmd
 
-      - name: Upload exe to release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: client/dist/VideoMatrix/*
-          draft: false
+          files: client/dist/VideoMatrix.exe
