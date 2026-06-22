@@ -21,6 +21,6 @@ export function deleteUser(id) {
 }
 
 // 切换用户状态
-export function toggleUserStatus(id, status) {
-  return api.put(`/users/${id}/status`, { status })
+export function toggleUserStatus(id, data) {
+  return api.put(`/users/${id}`, data)
 }

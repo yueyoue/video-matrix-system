@@ -1,11 +1,13 @@
-"""HTTP API client wrapper."""
+"""HTTP API client wrapper — matches server routes."""
 
+import os
 import requests
 from typing import Any
 
 from .auth import auth
 
-BASE_URL = "http://localhost:3000/api"
+# Allow overriding via environment variable
+BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:3000/api")
 _TIMEOUT = 15
 
 
@@ -31,7 +33,6 @@ def _handle(resp: requests.Response) -> Any:
         data = resp.json()
     except Exception:
         data = {"message": resp.text or "未知错误"}
-
     if resp.status_code >= 400:
         raise ApiError(resp.status_code, data.get("message", f"请求失败 ({resp.status_code})"))
     return data
@@ -39,53 +40,36 @@ def _handle(resp: requests.Response) -> Any:
 
 # ── Auth ───────────────────────────────────────────────────────
 def login(username: str, password: str) -> dict:
-    resp = requests.post(f"{BASE_URL}/auth/login",
-                         json={"username": username, "password": password},
-                         timeout=_TIMEOUT)
-    return _handle(resp)
+    return _handle(requests.post(f"{BASE_URL}/auth/login",
+                                 json={"username": username, "password": password},
+                                 timeout=_TIMEOUT))
 
 
-def get_user_info() -> dict:
-    return _handle(requests.get(f"{BASE_URL}/auth/me", headers=_headers(), timeout=_TIMEOUT))
+def get_profile() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/auth/profile", headers=_headers(), timeout=_TIMEOUT))
 
 
-# ── Dashboard / Stats ──────────────────────────────────────────
-def get_overview_stats() -> dict:
+# ── Stats ──────────────────────────────────────────────────────
+def get_stats_overview() -> dict:
     return _handle(requests.get(f"{BASE_URL}/stats/overview", headers=_headers(), timeout=_TIMEOUT))
 
 
-def get_recent_publish(limit: int = 20) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/stats/recent-publish",
-                                headers=_headers(), params={"limit": limit}, timeout=_TIMEOUT))
+def get_stats_users(date: str = "") -> dict:
+    params = {}
+    if date:
+        params["date"] = date
+    return _handle(requests.get(f"{BASE_URL}/stats/users", headers=_headers(), params=params, timeout=_TIMEOUT))
 
 
-def get_alerts() -> dict:
-    return _handle(requests.get(f"{BASE_URL}/stats/alerts", headers=_headers(), timeout=_TIMEOUT))
+def get_stats_platforms(date: str = "") -> dict:
+    params = {}
+    if date:
+        params["date"] = date
+    return _handle(requests.get(f"{BASE_URL}/stats/platforms", headers=_headers(), params=params, timeout=_TIMEOUT))
 
 
-# ── Analysis ───────────────────────────────────────────────────
-def get_analysis_summary(params: dict) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/analysis/summary",
-                                headers=_headers(), params=params, timeout=_TIMEOUT))
-
-
-def get_analysis_by_platform(params: dict) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/analysis/by-platform",
-                                headers=_headers(), params=params, timeout=_TIMEOUT))
-
-
-def get_analysis_by_video(params: dict, page: int = 1, page_size: int = 20) -> dict:
-    p = {**params, "page": page, "pageSize": page_size}
-    return _handle(requests.get(f"{BASE_URL}/analysis/by-video",
-                                headers=_headers(), params=p, timeout=_TIMEOUT))
-
-
-def export_analysis(params: dict) -> bytes:
-    resp = requests.get(f"{BASE_URL}/analysis/export",
-                        headers=_headers(), params=params, timeout=30)
-    if resp.status_code >= 400:
-        _handle(resp)
-    return resp.content
+def get_stats_analysis(params: dict) -> dict:
+    return _handle(requests.get(f"{BASE_URL}/stats/analysis", headers=_headers(), params=params, timeout=_TIMEOUT))
 
 
 # ── Accounts ───────────────────────────────────────────────────
@@ -93,118 +77,136 @@ def get_accounts(platform: str = "", page: int = 1, page_size: int = 20) -> dict
     params: dict = {"page": page, "pageSize": page_size}
     if platform:
         params["platform"] = platform
-    return _handle(requests.get(f"{BASE_URL}/accounts",
-                                headers=_headers(), params=params, timeout=_TIMEOUT))
-
-
-def get_account_counts() -> dict:
-    return _handle(requests.get(f"{BASE_URL}/accounts/counts", headers=_headers(), timeout=_TIMEOUT))
+    return _handle(requests.get(f"{BASE_URL}/accounts", headers=_headers(), params=params, timeout=_TIMEOUT))
 
 
 def add_account(data: dict) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/accounts",
-                                 headers=_headers(), json=data, timeout=_TIMEOUT))
+    return _handle(requests.post(f"{BASE_URL}/accounts", headers=_headers(), json=data, timeout=_TIMEOUT))
 
 
-def update_account(account_id: str, data: dict) -> dict:
-    return _handle(requests.put(f"{BASE_URL}/accounts/{account_id}",
-                                headers=_headers(), json=data, timeout=_TIMEOUT))
+def update_account(account_id: int, data: dict) -> dict:
+    return _handle(requests.put(f"{BASE_URL}/accounts/{account_id}", headers=_headers(), json=data, timeout=_TIMEOUT))
 
 
-def delete_account(account_id: str) -> dict:
-    return _handle(requests.delete(f"{BASE_URL}/accounts/{account_id}",
-                                   headers=_headers(), timeout=_TIMEOUT))
+def delete_account(account_id: int) -> dict:
+    return _handle(requests.delete(f"{BASE_URL}/accounts/{account_id}", headers=_headers(), timeout=_TIMEOUT))
 
 
-def batch_check_accounts(account_ids: list[str]) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/accounts/batch-check",
-                                 headers=_headers(), json={"ids": account_ids}, timeout=_TIMEOUT))
+def check_account(account_id: int) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/accounts/{account_id}/check", headers=_headers(), timeout=_TIMEOUT))
 
 
-# ── Video ──────────────────────────────────────────────────────
-def upload_video(file_path: str) -> dict:
-    with open(file_path, "rb") as f:
-        resp = requests.post(f"{BASE_URL}/videos/upload",
-                             headers={"Authorization": f"Bearer {auth.token}"},
-                             files={"file": f}, timeout=60)
-    return _handle(resp)
-
-
+# ── Videos ─────────────────────────────────────────────────────
 def get_videos(page: int = 1, page_size: int = 20) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/videos",
-                                headers=_headers(),
-                                params={"page": page, "pageSize": page_size},
-                                timeout=_TIMEOUT))
+    return _handle(requests.get(f"{BASE_URL}/videos", headers=_headers(),
+                                params={"page": page, "pageSize": page_size}, timeout=_TIMEOUT))
 
 
-def start_clip(data: dict) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/videos/clip",
-                                 headers=_headers(), json=data, timeout=_TIMEOUT))
+def cut_video(data: dict) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/videos/cut", headers=_headers(), json=data, timeout=60))
 
 
-def start_mix(data: dict) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/videos/mix",
-                                 headers=_headers(), json=data, timeout=60))
+def mix_video(data: dict) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/videos/mix", headers=_headers(), json=data, timeout=60))
 
 
-def add_to_publish_queue(video_ids: list[str]) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/videos/to-queue",
-                                 headers=_headers(), json={"videoIds": video_ids}, timeout=_TIMEOUT))
-
-
-def delete_video(video_id: str) -> dict:
-    return _handle(requests.delete(f"{BASE_URL}/videos/{video_id}",
-                                   headers=_headers(), timeout=_TIMEOUT))
+def delete_video(video_id: int) -> dict:
+    return _handle(requests.delete(f"{BASE_URL}/videos/{video_id}", headers=_headers(), timeout=_TIMEOUT))
 
 
 # ── Publish ────────────────────────────────────────────────────
-def get_publish_rules() -> dict:
-    return _handle(requests.get(f"{BASE_URL}/publish/rules", headers=_headers(), timeout=_TIMEOUT))
+def get_publish_queue() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/publish/queue", headers=_headers(), timeout=_TIMEOUT))
 
 
-def save_publish_rules(data: dict) -> dict:
-    return _handle(requests.put(f"{BASE_URL}/publish/rules",
-                                headers=_headers(), json=data, timeout=_TIMEOUT))
+def get_publish_rule() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/publish/rule", headers=_headers(), timeout=_TIMEOUT))
 
 
-def get_publish_queue(page: int = 1, page_size: int = 20) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/publish/queue",
-                                headers=_headers(),
-                                params={"page": page, "pageSize": page_size},
-                                timeout=_TIMEOUT))
+def save_publish_rule(data: dict) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/publish/rule", headers=_headers(), json=data, timeout=_TIMEOUT))
 
 
-def remove_from_queue(item_id: str) -> dict:
-    return _handle(requests.delete(f"{BASE_URL}/publish/queue/{item_id}",
-                                   headers=_headers(), timeout=_TIMEOUT))
+def publish_now(record_id: int) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/publish/{record_id}/publishNow", headers=_headers(), timeout=_TIMEOUT))
 
 
-# ── Config ─────────────────────────────────────────────────────
+def cancel_publish(record_id: int) -> dict:
+    return _handle(requests.delete(f"{BASE_URL}/publish/{record_id}", headers=_headers(), timeout=_TIMEOUT))
+
+
+# ── AI ─────────────────────────────────────────────────────────
+def get_ai_voices() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/ai/voices", headers=_headers(), timeout=_TIMEOUT))
+
+
+def add_ai_voice(data: dict) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/ai/voices", headers=_headers(), json=data, timeout=_TIMEOUT))
+
+
+def update_ai_voice(voice_id: int, data: dict) -> dict:
+    return _handle(requests.put(f"{BASE_URL}/ai/voices/{voice_id}", headers=_headers(), json=data, timeout=_TIMEOUT))
+
+
+def get_ai_config() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/ai/config", headers=_headers(), timeout=_TIMEOUT))
+
+
+def update_ai_config(data: dict) -> dict:
+    return _handle(requests.put(f"{BASE_URL}/ai/config", headers=_headers(), json=data, timeout=_TIMEOUT))
+
+
+def test_ai_connection() -> dict:
+    return _handle(requests.post(f"{BASE_URL}/ai/test", headers=_headers(), timeout=30))
+
+
+# ── Platform Config ────────────────────────────────────────────
 def get_platform_config(platform: str) -> dict:
-    return _handle(requests.get(f"{BASE_URL}/config/{platform}",
-                                headers=_headers(), timeout=_TIMEOUT))
+    return _handle(requests.get(f"{BASE_URL}/platform-config/{platform}", headers=_headers(), timeout=_TIMEOUT))
 
 
-def save_platform_config(platform: str, data: dict) -> dict:
-    return _handle(requests.put(f"{BASE_URL}/config/{platform}",
-                                headers=_headers(), json=data, timeout=_TIMEOUT))
+def update_platform_config(platform: str, data: dict) -> dict:
+    return _handle(requests.put(f"{BASE_URL}/platform-config/{platform}", headers=_headers(), json=data, timeout=_TIMEOUT))
 
 
 def reset_platform_config(platform: str) -> dict:
-    return _handle(requests.post(f"{BASE_URL}/config/{platform}/reset",
-                                 headers=_headers(), timeout=_TIMEOUT))
+    return _handle(requests.post(f"{BASE_URL}/platform-config/{platform}/reset", headers=_headers(), timeout=_TIMEOUT))
+
+
+# ── Versions ───────────────────────────────────────────────────
+def get_versions() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/versions", headers=_headers(), timeout=_TIMEOUT))
+
+
+def publish_version(data: dict) -> dict:
+    return _handle(requests.post(f"{BASE_URL}/versions", headers=_headers(), json=data, timeout=_TIMEOUT))
+
+
+def update_version(version_id: int, data: dict) -> dict:
+    return _handle(requests.put(f"{BASE_URL}/versions/{version_id}", headers=_headers(), json=data, timeout=_TIMEOUT))
+
+
+def get_latest_version() -> dict:
+    return _handle(requests.get(f"{BASE_URL}/versions/latest", headers=_headers(), timeout=_TIMEOUT))
 
 
 # ── Logs ───────────────────────────────────────────────────────
-def get_logs(params: dict, page: int = 1, page_size: int = 50) -> dict:
-    p = {**params, "page": page, "pageSize": page_size}
-    return _handle(requests.get(f"{BASE_URL}/logs",
-                                headers=_headers(), params=p, timeout=_TIMEOUT))
+def get_logs(params: dict = None, page: int = 1, page_size: int = 50) -> dict:
+    p = {**(params or {}), "page": page, "pageSize": page_size}
+    return _handle(requests.get(f"{BASE_URL}/logs", headers=_headers(), params=p, timeout=_TIMEOUT))
 
 
-def export_logs(params: dict) -> bytes:
-    resp = requests.get(f"{BASE_URL}/logs/export",
-                        headers=_headers(), params=params, timeout=30)
+def export_logs() -> bytes:
+    resp = requests.get(f"{BASE_URL}/logs/export", headers=_headers(), timeout=30)
     if resp.status_code >= 400:
         _handle(resp)
     return resp.content
+
+
+# ── Upload ─────────────────────────────────────────────────────
+def upload_file(file_path: str) -> dict:
+    with open(file_path, "rb") as f:
+        resp = requests.post(f"{BASE_URL}/upload",
+                             headers={"Authorization": f"Bearer {auth.token}"},
+                             files={"file": f}, timeout=120)
+    return _handle(resp)
