@@ -14,6 +14,7 @@ from ..styles.theme import (
 )
 from ..widgets.toast import Toast
 from .. import api
+from .. import ffmpeg
 
 
 class _VideoWorker(QThread):
@@ -246,29 +247,40 @@ class VideoView(QWidget):
         if not file_path or file_path == "未选择文件":
             Toast.warning(self, "请先选择视频文件")
             return
-        data = {
-            "filePath": file_path,
-            "segments": self._segments.value(),
-            "nameRule": self._name_rule.text(),
-        }
-        w = _VideoWorker(api.start_clip, data)
-        w.done.connect(lambda r: Toast.success(self, "裁切任务已提交"))
+        segments = self._segments.value()
+        name_rule = self._name_rule.text()
+        def _do_clip():
+            outputs = ffmpeg.cut_video(file_path, segments, name_rule)
+            return {"ok": True, "count": len(outputs), "files": outputs}
+        w = _VideoWorker(_do_clip)
+        w.done.connect(lambda r: Toast.success(self, f"裁切完成，生成 {r.get('count', 0)} 个片段"))
         w.failed.connect(lambda m: Toast.error(self, f"裁切失败: {m}"))
         self._workers.append(w)
         w.start()
 
     def _on_mix(self):
-        data = {
-            "rule": self._mix_rule.currentText(),
-            "voiceText": self._voice_text.toPlainText(),
-            "voiceType": self._voice_type.currentText(),
-            "speed": self._speed_slider.value() / 100,
-            "bgAudio": self._bg_audio.currentText(),
-            "volume": self._vol_slider.value(),
-            "subtitle": self._subtitle_cb.isChecked(),
-        }
-        w = _VideoWorker(api.start_mix, data)
-        w.done.connect(lambda r: Toast.success(self, "混剪任务已提交"))
+        # Get videos from library for mixing
+        def _do_mix():
+            # Fetch video list from server
+            resp = api.get_videos()
+            d = resp.get('data', resp)
+            videos = d.get('list', d.get('records', [])) if isinstance(d, dict) else d
+            if not videos:
+                raise RuntimeError('视频库为空，请先裁切或上传视频')
+            # Use first N videos for mixing
+            video_files = []
+            for v in videos[:10]:
+                path = v.get('file_path', v.get('filePath', ''))
+                if path and os.path.exists(path):
+                    video_files.append(path)
+            if not video_files:
+                raise RuntimeError('没有可用的本地视频文件')
+            import tempfile
+            out = os.path.join(tempfile.gettempdir(), 'mixed_video.mp4')
+            result = ffmpeg.mix_videos(video_files, out)
+            return {"ok": True, "output": result}
+        w = _VideoWorker(_do_mix)
+        w.done.connect(lambda r: Toast.success(self, f"混剪完成: {r.get('output', '')}"))
         w.failed.connect(lambda m: Toast.error(self, f"混剪失败: {m}"))
         self._workers.append(w)
         w.start()

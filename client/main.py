@@ -69,6 +69,18 @@ class AppController:
 
 
 def main():
+    # Global exception handler - prevent crashes
+    def excepthook(exc_type, exc_value, exc_tb):
+        import traceback
+        err = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        print(f'[ERROR] {err}', file=sys.stderr)
+        try:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(None, '错误', f'发生异常:\n{exc_value}')
+        except Exception:
+            pass
+    sys.excepthook = excepthook
+
     controller = AppController()
     sys.exit(controller.run())
 

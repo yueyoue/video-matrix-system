@@ -177,6 +177,8 @@ class PublishView(QWidget):
         w.start()
 
     def _on_rules(self, data: dict):
+        if not isinstance(data, dict):
+            return
         d = data.get("data", data)
         if isinstance(d, dict):
             platforms = d.get("platforms", [])
