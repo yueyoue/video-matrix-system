@@ -1,5 +1,5 @@
 -- 短视频矩阵运营系统 - 建表SQL
--- 表前缀 {prefix} 由安装程序替换
+-- 兼容 MySQL 5.5+（每个表最多一个 TIMESTAMP 列带 CURRENT_TIMESTAMP）
 
 CREATE TABLE IF NOT EXISTS `{prefix}sys_user` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS `{prefix}sys_user` (
   `status` ENUM('active','disabled') DEFAULT 'active',
   `last_login` DATETIME,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `{prefix}platform_account` (
