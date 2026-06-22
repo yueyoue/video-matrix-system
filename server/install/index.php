@@ -771,7 +771,7 @@ function handleInstall()
                     </div>
                     <div class="done-actions">
                         <a href="/" class="btn btn-primary">🏠 进入首页</a>
-                        <a href="/api/auth/login" class="btn btn-outline" target="_blank">🔑 测试登录API</a>
+                        <a href="/api/auth/login.php" class="btn btn-outline" target="_blank">🔑 测试登录API</a>
                     </div>
                     <div class="done-warn">
                         <strong>⚠️ 安全提示：</strong>为确保系统安全，请完成以下操作：<br><br>
