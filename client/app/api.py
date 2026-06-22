@@ -240,3 +240,81 @@ def upload_file(file_path: str) -> dict:
                              headers={"Authorization": f"Bearer {auth.token}"},
                              files={"file": f}, timeout=120)
     return _handle(resp)
+
+
+# ── Aliases & missing functions (views expect these names) ─────
+
+def get_overview_stats() -> dict:
+    return get_stats_overview()
+
+
+def get_user_info() -> dict:
+    return get_profile()
+
+
+def get_publish_rules() -> dict:
+    return get_publish_rule()
+
+
+def save_publish_rules(data: dict) -> dict:
+    return save_publish_rule(data)
+
+
+def save_platform_config(platform: str, data: dict) -> dict:
+    return update_platform_config(platform, data)
+
+
+def get_analysis_summary(params: dict) -> dict:
+    return _handle(requests.get(_api_url("/stats/analysis"), headers=_headers(),
+                                params={**params, "type": "summary"}, timeout=_TIMEOUT))
+
+
+def get_analysis_by_platform(params: dict) -> dict:
+    return _handle(requests.get(_api_url("/stats/analysis"), headers=_headers(),
+                                params={**params, "type": "platform"}, timeout=_TIMEOUT))
+
+
+def get_analysis_by_video(params: dict, page: int = 1) -> dict:
+    return _handle(requests.get(_api_url("/stats/analysis"), headers=_headers(),
+                                params={**params, "type": "video", "page": page}, timeout=_TIMEOUT))
+
+
+def export_analysis(params: dict) -> bytes:
+    resp = requests.get(_api_url("/stats/analysis"), headers=_headers(),
+                        params={**params, "export": 1}, timeout=30)
+    if resp.status_code >= 400:
+        _handle(resp)
+    return resp.content
+
+
+def remove_from_queue(queue_id: int) -> dict:
+    return _handle(requests.delete(_api_url(f"/publish/{queue_id}"),
+                                   headers=_headers(), timeout=_TIMEOUT))
+
+
+def add_to_publish_queue(video_ids: list) -> dict:
+    return _handle(requests.post(_api_url("/publish/queue"), headers=_headers(),
+                                 json={"video_ids": video_ids}, timeout=_TIMEOUT))
+
+
+def batch_check_accounts(ids: list) -> dict:
+    return _handle(requests.post(_api_url("/accounts/batch-check"), headers=_headers(),
+                                 json={"ids": ids}, timeout=60))
+
+
+def start_clip(data: dict) -> dict:
+    return _handle(requests.post(_api_url("/videos/cut"), headers=_headers(),
+                                 json=data, timeout=60))
+
+
+def start_mix(data: dict) -> dict:
+    return _handle(requests.post(_api_url("/videos/mix"), headers=_headers(),
+                                 json=data, timeout=60))
+
+
+def export_logs(params: dict = None) -> bytes:
+    resp = requests.get(_api_url("/logs/export"), headers=_headers(),
+                        params=params or {}, timeout=30)
+    if resp.status_code >= 400:
+        _handle(resp)
+    return resp.content
