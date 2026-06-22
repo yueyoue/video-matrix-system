@@ -47,8 +47,8 @@
                 <span :class="['badge', idx < 3 ? 'badge-orange' : 'badge-gray']">{{ idx + 1 }}</span>
               </td>
               <td>{{ item.username }}</td>
-              <td>{{ item.videoCount }}</td>
-              <td>{{ item.publishSuccess }}</td>
+              <td>{{ item.today_videos ?? item.videoCount ?? 0 }}</td>
+              <td>{{ item.publish_success ?? item.publishSuccess ?? 0 }}</td>
             </tr>
           </tbody>
         </table>
@@ -80,11 +80,11 @@
             </tr>
             <tr v-else v-for="item in platformStats" :key="item.platform">
               <td>{{ item.platform }}</td>
-              <td>{{ item.accountCount }}</td>
-              <td>{{ item.publishCount }}</td>
+              <td>{{ item.accounts ?? item.accountCount ?? 0 }}</td>
+              <td>{{ item.today_publish ?? item.publishCount ?? 0 }}</td>
               <td>
-                <span :class="item.successRate >= 90 ? 'text-success' : item.successRate >= 70 ? 'text-warning' : 'text-danger'">
-                  {{ item.successRate }}%
+                <span :class="(item.success_rate ?? item.successRate ?? 0) >= 90 ? 'text-success' : (item.success_rate ?? item.successRate ?? 0) >= 70 ? 'text-warning' : 'text-danger'">
+                  {{ item.success_rate ?? item.successRate ?? 0 }}%
                 </span>
               </td>
             </tr>
@@ -117,11 +117,13 @@ async function fetchData() {
       getStatsUsers(),
       getStatsPlatforms()
     ])
-    statCards[0].value = overview.data?.totalUsers ?? 0
-    statCards[1].value = overview.data?.todayVideos ?? 0
-    statCards[2].value = overview.data?.todaySuccess ?? 0
-    statCards[3].value = overview.data?.todayFailed ?? 0
-    userStats.value = users.data || []
+    const od = overview.data || {}
+    statCards[0].value = od.total_users ?? od.totalUsers ?? 0
+    statCards[1].value = od.today_videos ?? od.todayVideos ?? 0
+    statCards[2].value = od.today_publish_success ?? od.todaySuccess ?? 0
+    statCards[3].value = od.today_publish_failed ?? od.todayFailed ?? 0
+    const ud = users.data || {}
+    userStats.value = Array.isArray(ud) ? ud : (ud.list || [])
     platformStats.value = platforms.data || []
   } catch (e) {
     console.error('获取统计数据失败:', e)
