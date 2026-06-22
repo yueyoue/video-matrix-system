@@ -14,16 +14,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Build Web Admin
         run: cd web-admin && npm ci && npm run build
-      - name: Package
+
+      - name: Package deploy.zip (PHP + Vue 合并包)
         run: |
-          zip -r server.zip server/ -x "server/uploads/*"
-          cd web-admin/dist && zip -r ../../web-admin.zip . && cd ../..
-          zip -r client.zip client/ -x "client/__pycache__/*" "client/**/*.pyc"
+          mkdir -p deploy
+          cp server/index.php deploy/
+          cp server/.htaccess deploy/
+          cp server/config.sample.php deploy/
+          cp -r server/api deploy/
+          cp -r server/includes deploy/
+          cp -r server/install deploy/
+          cp server/nginx.conf deploy/
+          mkdir -p deploy/uploads
+          cp web-admin/dist/index.html deploy/
+          cp -r web-admin/dist/assets deploy/
+          cd deploy && zip -r ../deploy.zip .
+
+      - name: Package client source
+        run: zip -r client.zip client/ -x "client/__pycache__/*" "client/**/*.pyc"
+
       - name: Get version
         id: version
         run: |
@@ -32,6 +48,7 @@ jobs:
           else
             echo "tag=v$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
           fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -39,12 +56,17 @@ jobs:
           name: "Release ${{ steps.version.outputs.tag }}"
           body: |
             ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
-            - `VideoMatrix.zip` - 桌面客户端 Windows 版 (解压后运行 VideoMatrix.exe)
-            - `server.zip` - 后端API (PHP+MySQL，上传到宝塔访问域名/install安装)
-            - `web-admin.zip` - Web管理后台 (解压到网站根目录)
+            
+            ### 下载说明
+            - `deploy.zip` - **服务端一体化包**（上传到宝塔解压，访问 域名/install 安装）
+            - `VideoMatrix.zip` - 桌面客户端 Windows 版（解压运行 VideoMatrix.exe）
+            
+            ### 宝塔部署（3步）
+            1. 新建网站，上传 `deploy.zip` 解压到根目录
+            2. 浏览器访问 `域名/install` 按提示安装
+            3. 删掉 install 目录，完成！
           files: |
-            server.zip
-            web-admin.zip
+            deploy.zip
             client.zip
           draft: false
           prerelease: false
@@ -57,19 +79,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install deps
+      - name: Build exe
         run: |
           pip install pyinstaller PyQt6 requests
-      - name: Build exe (onedir mode)
-        run: |
           pyinstaller --noconfirm --onedir --windowed --name VideoMatrix --noconsole --collect-all PyQt6 main.py
         shell: cmd
         working-directory: client
-      - name: Create launcher bat
-        run: |
-          echo @echo off > client\dist\VideoMatrix\启动客户端.bat
-          echo start VideoMatrix.exe >> client\dist\VideoMatrix\启动客户端.bat
-        shell: cmd
       - name: Zip dist
         run: |
           cd client/dist
