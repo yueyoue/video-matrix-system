@@ -1,0 +1,74 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web-admin
+
+      - name: Build Web Admin
+        run: npm run build
+        working-directory: web-admin
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Build Client
+        run: npm run build
+        working-directory: client
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cd web-admin/dist && zip -r ../../release/web-admin.zip . && cd ../..
+          cd client/dist && zip -r ../../release/client.zip . && cd ../..
+          echo "v$(date +%Y%m%d.%H%M%S)" > release/version.txt
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v$(date +%Y%m%d.%H%M%S)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Release ${{ steps.version.outputs.tag }}"
+          body: |
+            ## 短视频矩阵运营系统 ${{ steps.version.outputs.tag }}
+            
+            ### 更新内容
+            - Web管理后台 & 桌面客户端 UI 原型更新
+            
+            ### 下载说明
+            - `web-admin.zip` - Web管理后台（解压后用浏览器打开 index.html）
+            - `client.zip` - 桌面客户端UI原型（解压后用浏览器打开 index.html）
+          files: |
+            release/web-admin.zip
+            release/client.zip
+          draft: false
+          prerelease: false
