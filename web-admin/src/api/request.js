@@ -7,11 +7,18 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 })
 
-// 请求拦截器 - 添加 Token
+// 请求拦截器 - 添加 Token 和 .php 后缀
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // 自动添加 .php 后缀，避免依赖 nginx URL 重写
+  if (config.url && !config.url.endsWith('.php') && !config.url.includes('?')) {
+    config.url += '.php'
+  } else if (config.url && config.url.includes('?')) {
+    const [path, query] = config.url.split('?')
+    if (!path.endsWith('.php')) config.url = path + '.php?' + query
   }
   return config
 }, error => Promise.reject(error))

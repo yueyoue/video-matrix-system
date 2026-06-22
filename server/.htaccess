@@ -1,19 +1,4 @@
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^api/(.*)$ index.php [QSA,L]
-
-# CORS Headers
-<IfModule mod_headers.c>
-    Header always set Access-Control-Allow-Origin "*"
-    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
-    Header always set Access-Control-Max-Age "86400"
-</IfModule>
-
-# PHP Settings for uploads
-<IfModule mod_php7.c>
-    php_value upload_max_filesize 200M
-    php_value post_max_size 210M
-    php_value max_execution_time 300
-</IfModule>
+RewriteRule ^(.*)$ index.php [QSA,L]

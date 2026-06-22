@@ -21,6 +21,9 @@ if (strpos($path, '/api/') === 0) {
 
     $apiPath = preg_replace('#^/api/#', '', $path);
     $segments = explode('/', trim($apiPath, '/'));
+    // 设置全局路由变量供 API 文件使用
+    $GLOBALS['route_segments'] = $segments;
+    $GLOBALS['route_method']   = $_SERVER['REQUEST_METHOD'];
     $file = __DIR__ . '/api/' . ($segments[0] ?? '') . '.php';
 
     if (file_exists($file)) {
