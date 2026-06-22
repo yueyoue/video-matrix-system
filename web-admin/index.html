@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>矩阵系统管理后台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config={theme:{extend:{colors:{primary:'#165DFF',success:'#00B42A',warning:'#FF7D00',danger:'#F53F3F','gray-bg':'#F5F7FA','gray-border':'#E5E6EB'}}}}
+    </script>
+    <style>
+        .menu-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:8px;cursor:pointer;transition:all .2s;color:#666}
+        .menu-item:hover{background:rgba(22,93,255,.05);color:#165DFF}
+        .menu-item.active{background:rgba(22,93,255,.1);color:#165DFF;font-weight:500}
+        .tab-item{padding:8px 16px;cursor:pointer;border-bottom:2px solid transparent;color:#999;transition:all .2s}
+        .tab-item:hover{color:#165DFF}
+        .tab-item.active{color:#165DFF;border-color:#165DFF;font-weight:500}
+        .btn-primary{padding:8px 16px;background:#165DFF;color:#fff;border-radius:6px;font-size:14px;cursor:pointer;border:none;transition:all .2s}
+        .btn-primary:hover{background:rgba(22,93,255,.9)}
+        .btn-default{padding:8px 16px;background:#fff;border:1px solid #E5E6EB;border-radius:6px;font-size:14px;cursor:pointer;color:#333;transition:all .2s}
+        .btn-default:hover{background:#f9f9f9}
+        .btn-danger{padding:8px 16px;background:#F53F3F;color:#fff;border-radius:6px;font-size:14px;cursor:pointer;border:none}
+        .card{background:#fff;border-radius:8px;border:1px solid #E5E6EB;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+        .form-input{width:100%;padding:8px 12px;border:1px solid #E5E6EB;border-radius:6px;font-size:14px;outline:none;transition:all .2s}
+        .form-input:focus{border-color:#165DFF;box-shadow:0 0 0 1px #165DFF}
+        .form-label{display:block;font-size:14px;color:#333;margin-bottom:6px}
+        .table-th{padding:12px 16px;text-align:left;font-size:12px;color:#999;background:#f9f9f9;border-bottom:1px solid #E5E6EB;font-weight:500}
+        .table-td{padding:12px 16px;font-size:14px;color:#333;border-bottom:1px solid #E5E6EB}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1000}
+        .modal{background:#fff;border-radius:12px;width:520px;max-height:80vh;overflow-y:auto}
+        .modal-header{padding:16px 20px;border-bottom:1px solid #E5E6EB;display:flex;justify-content:space-between;align-items:center}
+        .modal-body{padding:20px}
+        .modal-footer{padding:12px 20px;border-top:1px solid #E5E6EB;display:flex;justify-content:flex-end;gap:8px}
+        .toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;font-size:14px;z-index:2000;animation:slideIn .3s ease}
+        .toast.success{background:#00B42A}
+        .toast.error{background:#F53F3F}
+        .toast.warning{background:#FF7D00}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+        .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px}
+        .badge-blue{background:#E8F3FF;color:#165DFF}
+        .badge-green{background:#E8FFEA;color:#00B42A}
+        .badge-red{background:#FFE8E8;color:#F53F3F}
+        .badge-gray{background:#f5f5f5;color:#999}
+    </style>
+</head>
+<body class="bg-gray-bg h-screen flex overflow-hidden">
+    <!-- 侧边栏 -->
+    <aside class="w-60 bg-white border-r border-gray-border flex flex-col h-full">
+        <div class="h-16 flex items-center px-5 border-b border-gray-border">
+            <i class="fa fa-cog text-primary text-2xl mr-2"></i>
+            <span class="font-bold text-lg text-gray-800">管理后台</span>
+        </div>
+        <nav class="flex-1 p-3 space-y-1" id="sidebar">
+            <div class="menu-item active" data-page="statistics"><i class="fa fa-bar-chart w-5 text-center"></i><span>数据统计</span></div>
+            <div class="menu-item" data-page="user"><i class="fa fa-users w-5 text-center"></i><span>用户管理</span></div>
+            <div class="menu-item" data-page="ai"><i class="fa fa-microphone w-5 text-center"></i><span>AI配音配置</span></div>
+            <div class="menu-item" data-page="platform"><i class="fa fa-plug w-5 text-center"></i><span>平台接口配置</span></div>
+            <div class="menu-item" data-page="version"><i class="fa fa-download w-5 text-center"></i><span>软件版本管理</span></div>
+            <div class="menu-item" data-page="log"><i class="fa fa-file-text-o w-5 text-center"></i><span>系统日志</span></div>
+        </nav>
+        <div class="p-3 border-t border-gray-border">
+            <div class="flex items-center gap-2 px-2 py-2">
+                <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm"><i class="fa fa-user"></i></div>
+                <span class="text-sm">超级管理员</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden">
+        <header class="h-16 bg-white border-b border-gray-border flex items-center justify-between px-6">
+            <h1 id="page-title" class="text-lg font-medium text-gray-800">数据统计</h1>
+            <div class="flex items-center gap-4">
+                <span class="text-sm text-gray-500" id="today-date"></span>
+                <button class="btn-default" onclick="showToast('已刷新数据','success')"><i class="fa fa-refresh mr-1"></i>刷新</button>
+            </div>
+        </header>
+        <div class="flex-1 overflow-y-auto p-6" id="content-area">
+
+            <!-- ============ 1. 数据统计页 ============ -->
+            <section class="page" id="page-statistics">
+                <div class="grid grid-cols-4 gap-4 mb-6">
+                    <div class="card p-5"><div class="text-gray-500 text-sm mb-2">总用户数</div><div class="text-2xl font-bold text-gray-800">12</div><div class="text-xs text-success mt-1">活跃用户 10 人</div></div>
+                    <div class="card p-5"><div class="text-gray-500 text-sm mb-2">今日生成视频</div><div class="text-2xl font-bold text-gray-800">186</div><div class="text-xs text-gray-400 mt-1">累计生成 3254 条</div></div>
+                    <div class="card p-5"><div class="text-gray-500 text-sm mb-2">今日发布成功</div><div class="text-2xl font-bold text-gray-800">152</div><div class="text-xs text-success mt-1">成功率 91.6%</div></div>
+                    <div class="card p-5"><div class="text-gray-500 text-sm mb-2">今日发布失败</div><div class="text-2xl font-bold text-danger">14</div><div class="text-xs text-gray-400 mt-1">主要为账号失效</div></div>
+                </div>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">用户工作量排行（今日）</span></div>
+                        <table class="w-full"><thead><tr><th class="table-th">用户名</th><th class="table-th">生成数</th><th class="table-th">发布成功</th><th class="table-th">失败数</th></tr></thead>
+                        <tbody id="stat-user-table"></tbody></table>
+                    </div>
+                    <div class="card">
+                        <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center"><span class="font-medium text-gray-800">平台账号发布统计</span></div>
+                        <table class="w-full"><thead><tr><th class="table-th">平台</th><th class="table-th">账号数</th><th class="table-th">今日发布</th><th class="table-th">成功率</th></tr></thead>
+                        <tbody id="stat-platform-table"></tbody></table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ 2. 用户管理页 ============ -->
+            <section class="page hidden" id="page-user">
+                <div class="card">
+                    <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center">
+                        <span class="font-medium text-gray-800">用户列表</span>
+                        <button class="btn-primary" onclick="openModal('add-user-modal')"><i class="fa fa-plus mr-1"></i>添加用户</button>
+                    </div>
+                    <table class="w-full"><thead><tr>
+                        <th class="table-th">用户名</th><th class="table-th">角色</th><th class="table-th">状态</th><th class="table-th">每日生成配额</th><th class="table-th">今日已用</th><th class="table-th">最后登录</th><th class="table-th">操作</th>
+                    </tr></thead><tbody id="user-table-body"></tbody></table>
+                </div>
+            </section>
+
+            <!-- ============ 3. AI配音配置页 ============ -->
+            <section class="page hidden" id="page-ai">
+                <div class="card mb-6">
+                    <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">AI接口基础配置</span></div>
+                    <div class="p-5 grid grid-cols-2 gap-6">
+                        <div><label class="form-label">接口服务商</label><select class="form-input" id="ai-provider"><option>阿里云智能语音</option><option>腾讯云语音合成</option><option>讯飞开放平台</option></select></div>
+                        <div><label class="form-label">AppID / AccessKey</label><input type="text" class="form-input" placeholder="请输入密钥ID" id="ai-appid"></div>
+                        <div class="col-span-2"><label class="form-label">AccessKeySecret / 密钥</label><input type="password" class="form-input" placeholder="请输入密钥内容" id="ai-secret"></div>
+                        <div><label class="form-label">单用户每日调用上限</label><input type="number" class="form-input" value="100" id="ai-limit"></div>
+                        <div class="col-span-2 flex gap-2">
+                            <button class="btn-primary" onclick="showToast('AI配置已保存','success')">保存配置</button>
+                            <button class="btn-default" onclick="showToast('接口连通性测试成功','success')">测试接口连通性</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center">
+                        <span class="font-medium text-gray-800">音色列表管理</span>
+                        <button class="btn-primary" onclick="openModal('add-voice-modal')">添加音色</button>
+                    </div>
+                    <table class="w-full"><thead><tr><th class="table-th">音色名称</th><th class="table-th">音色ID</th><th class="table-th">类型</th><th class="table-th">适用场景</th><th class="table-th">状态</th><th class="table-th">操作</th></tr></thead>
+                    <tbody id="voice-table-body"></tbody></table>
+                </div>
+            </section>
+
+            <!-- ============ 4. 平台接口配置页 ============ -->
+            <section class="page hidden" id="page-platform">
+                <div class="card">
+                    <div class="px-5 py-3 border-b border-gray-border">
+                        <div class="flex items-center gap-1" id="platform-tabs">
+                            <div class="tab-item active" data-platform="douyin">抖音配置</div>
+                            <div class="tab-item" data-platform="kuaishou">快手配置</div>
+                            <div class="tab-item" data-platform="xiaohongshu">小红书配置</div>
+                            <div class="tab-item" data-platform="weixin">视频号配置</div>
+                        </div>
+                    </div>
+                    <div class="p-5">
+                        <p class="text-sm text-gray-500 mb-4">全局统一配置各平台接口参数，客户端自动同步</p>
+                        <div id="platform-config-form"></div>
+                        <div class="mt-4 flex gap-2">
+                            <button class="btn-primary" onclick="showToast('配置已保存','success')">保存配置</button>
+                            <button class="btn-default" onclick="showToast('已恢复默认配置','warning')">恢复默认</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============ 5. 软件版本管理页 ============ -->
+            <section class="page hidden" id="page-version">
+                <div class="card mb-6">
+                    <div class="px-5 py-3 border-b border-gray-border flex justify-between items-center">
+                        <span class="font-medium text-gray-800">版本发布</span>
+                    </div>
+                    <div class="p-5 grid grid-cols-2 gap-4">
+                        <div><label class="form-label">版本号</label><input type="text" class="form-input" placeholder="例如 v1.3.0" id="ver-number"></div>
+                        <div><label class="form-label">客户端安装包</label>
+                            <div class="flex gap-2"><input type="text" class="form-input flex-1" placeholder="未选择文件" id="ver-file" readonly><button class="btn-default" onclick="showToast('文件选择模拟','success')">选择文件</button></div>
+                        </div>
+                        <div class="col-span-2"><label class="form-label">更新日志</label><textarea class="form-input" rows="3" placeholder="输入本次更新内容" id="ver-changelog"></textarea></div>
+                        <div class="col-span-2"><button class="btn-primary" onclick="publishVersion()">发布新版本</button></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="px-5 py-3 border-b border-gray-border"><span class="font-medium text-gray-800">历史版本</span></div>
+                    <table class="w-full"><thead><tr><th class="table-th">版本号</th><th class="table-th">更新日志</th><th class="table-th">发布时间</th><th class="table-th">状态</th><th class="table-th">操作</th></tr></thead>
+                    <tbody id="version-table-body"></tbody></table>
+                </div>
+            </section>
+
+            <!-- ============ 6. 系统日志页 ============ -->
+            <section class="page hidden" id="page-log">
+                <div class="card">
+                    <div class="px-5 py-3 border-b border-gray-border flex items-center gap-4 flex-wrap">
+                        <span class="font-medium text-gray-800">系统日志</span>
+                        <select class="form-input w-28" id="log-level-filter" onchange="filterLogs()">
+                            <option value="">全部级别</option><option value="INFO">INFO</option><option value="WARN">WARN</option><option value="ERROR">ERROR</option>
+                        </select>
+                        <input type="text" class="form-input w-48" placeholder="搜索日志内容..." id="log-search" oninput="filterLogs()">
+                        <button class="btn-default ml-auto" onclick="showToast('日志已导出','success')"><i class="fa fa-download mr-1"></i>导出日志</button>
+                    </div>
+                    <table class="w-full"><thead><tr><th class="table-th">时间</th><th class="table-th">级别</th><th class="table-th">用户</th><th class="table-th">操作</th><th class="table-th">详情</th></tr></thead>
+                    <tbody id="log-table-body"></tbody></table>
+                    <div class="px-5 py-3 border-t border-gray-border flex justify-between items-center text-sm text-gray-500">
+                        <span id="log-count">共 0 条</span>
+                        <div class="flex gap-1"><button class="btn-default px-3 py-1">上一页</button><button class="btn-primary px-3 py-1">1</button><button class="btn-default px-3 py-1">2</button><button class="btn-default px-3 py-1">下一页</button></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ====== 添加用户弹窗 ====== -->
+    <div id="add-user-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-user-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">添加用户</span><button onclick="closeModal('add-user-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body space-y-4">
+                <div><label class="form-label">用户名</label><input type="text" class="form-input" placeholder="请输入用户名" id="new-username"></div>
+                <div><label class="form-label">密码</label><input type="password" class="form-input" placeholder="请输入密码" id="new-password"></div>
+                <div><label class="form-label">角色</label><select class="form-input" id="new-role"><option value="operator">普通运营</option><option value="admin">超级管理员</option></select></div>
+                <div><label class="form-label">每日生成配额</label><input type="number" class="form-input" value="50" id="new-quota"></div>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('add-user-modal')">取消</button><button class="btn-primary" onclick="addUser()">确认添加</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 编辑用户弹窗 ====== -->
+    <div id="edit-user-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('edit-user-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">编辑用户</span><button onclick="closeModal('edit-user-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body space-y-4">
+                <div><label class="form-label">用户名</label><input type="text" class="form-input" id="edit-username" readonly></div>
+                <div><label class="form-label">角色</label><select class="form-input" id="edit-role"><option value="operator">普通运营</option><option value="admin">超级管理员</option></select></div>
+                <div><label class="form-label">每日生成配额</label><input type="number" class="form-input" id="edit-quota"></div>
+                <div><label class="form-label">重置密码（留空不修改）</label><input type="password" class="form-input" placeholder="输入新密码" id="edit-password"></div>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('edit-user-modal')">取消</button><button class="btn-primary" onclick="saveEditUser()">保存修改</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 添加音色弹窗 ====== -->
+    <div id="add-voice-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-voice-modal')">
+        <div class="modal">
+            <div class="modal-header"><span class="font-medium text-gray-800">添加音色</span><button onclick="closeModal('add-voice-modal')" class="text-gray-400 hover:text-gray-600"><i class="fa fa-times"></i></button></div>
+            <div class="modal-body space-y-4">
+                <div><label class="form-label">音色名称</label><input type="text" class="form-input" placeholder="例如：温柔女声-小云" id="voice-name"></div>
+                <div><label class="form-label">音色ID</label><input type="text" class="form-input" placeholder="例如：xiaoyun" id="voice-id"></div>
+                <div><label class="form-label">类型</label><select class="form-input" id="voice-type"><option>女声</option><option>男声</option></select></div>
+                <div><label class="form-label">适用场景</label><input type="text" class="form-input" placeholder="例如：通用、讲解" id="voice-scene"></div>
+            </div>
+            <div class="modal-footer"><button class="btn-default" onclick="closeModal('add-voice-modal')">取消</button><button class="btn-primary" onclick="addVoice()">确认添加</button></div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+    // ====== 数据层 ======
+    const state = {
+        users: [
+            {name:'运营员小张',role:'普通运营',status:'正常',quota:50,used:42,lastLogin:'2026-06-22 09:12'},
+            {name:'运营员小李',role:'普通运营',status:'正常',quota:50,used:38,lastLogin:'2026-06-22 08:45'},
+            {name:'运营员小王',role:'普通运营',status:'正常',quota:50,used:35,lastLogin:'2026-06-22 10:01'},
+            {name:'测试账号01',role:'访客',status:'已停用',quota:10,used:0,lastLogin:'2026-06-20 15:30'}
+        ],
+        voices: [
+            {name:'温柔女声-小云',id:'xiaoyun',type:'女声',scene:'通用、讲解',status:'启用中'},
+            {name:'磁性男声-阿凯',id:'akai',type:'男声',scene:'解说、旁白',status:'启用中'},
+            {name:'活力少女-小桃',id:'xiaotao',type:'女声',scene:'娱乐、种草',status:'启用中'},
+            {name:'沉稳旁白-老周',id:'laozhou',type:'男声',scene:'纪录片、正式',status:'已停用'}
+        ],
+        versions: [
+            {ver:'v1.2.0',changelog:'新增视频号支持、优化混剪算法',time:'2026-06-20 14:00',status:'当前版本'},
+            {ver:'v1.1.0',changelog:'新增AI配音功能、修复已知BUG',time:'2026-06-10 10:00',status:'历史版本'},
+            {ver:'v1.0.0',changelog:'系统首发版本',time:'2026-06-01 09:00',status:'已下架'}
+        ],
+        logs: [
+            {time:'2026-06-22 09:12:33',level:'INFO',user:'运营员小张',action:'用户登录',detail:'登录成功'},
+            {time:'2026-06-22 09:15:01',level:'INFO',user:'运营员小张',action:'视频生成',detail:'生成混剪视频 5 条'},
+            {time:'2026-06-22 09:20:45',level:'WARN',user:'运营员小李',action:'发布任务',detail:'抖音账号03 Cookie即将过期'},
+            {time:'2026-06-22 09:25:12',level:'ERROR',user:'运营员小张',action:'发布任务',detail:'抖音账号08 登录失效，发布失败'},
+            {time:'2026-06-22 09:30:00',level:'INFO',user:'管理员',action:'配置修改',detail:'更新AI配音接口配置'},
+            {time:'2026-06-22 08:45:22',level:'INFO',user:'运营员小李',action:'用户登录',detail:'登录成功'},
+            {time:'2026-06-22 08:50:10',level:'INFO',user:'运营员小李',action:'视频生成',detail:'生成混剪视频 8 条'},
+            {time:'2026-06-21 18:30:00',level:'INFO',user:'运营员小王',action:'发布任务',detail:'成功发布 3 条视频到小红书'},
+            {time:'2026-06-21 17:45:33',level:'WARN',user:'系统',action:'定时任务',detail:'快手平台数据回收超时'},
+            {time:'2026-06-21 16:00:00',level:'ERROR',user:'运营员小张',action:'AI配音',detail:'配音接口调用失败：配额不足'}
+        ],
+        stats: {
+            users:[{name:'运营员小张',gen:42,success:36,fail:2},{name:'运营员小李',gen:38,success:32,fail:3},{name:'运营员小王',gen:35,success:30,fail:1}],
+            platforms:[{name:'抖音',count:10,publish:28,rate:'93.3%'},{name:'快手',count:5,publish:14,rate:'92.9%'},{name:'小红书',count:20,publish:56,rate:'89.3%'},{name:'视频号',count:3,publish:18,rate:'94.4%'}]
+        },
+        platformConfigs: {
+            douyin:{name:'抖音',fields:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://creator.douyin.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://creator.douyin.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://creator.douyin.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://creator.douyin.com/api/publish'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'30'}
+            ]},
+            kuaishou:{name:'快手',fields:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://cp.kuaishou.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://cp.kuaishou.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://cp.kuaishou.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://cp.kuaishou.com/api/publish'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'15'}
+            ]},
+            xiaohongshu:{name:'小红书',fields:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://creator.xiaohongshu.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://creator.xiaohongshu.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://creator.xiaohongshu.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://creator.xiaohongshu.com/api/publish'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'7'}
+            ]},
+            weixin:{name:'视频号',fields:[
+                {label:'创作者后台地址',key:'creatorUrl',value:'https://channels.weixin.qq.com/'},
+                {label:'登录态校验接口',key:'loginCheck',value:'https://channels.weixin.qq.com/api/login/check'},
+                {label:'作品列表接口',key:'videoList',value:'https://channels.weixin.qq.com/api/videolist'},
+                {label:'视频发布接口',key:'publish',value:'https://channels.weixin.qq.com/api/publish'},
+                {label:'Cookie有效期（天）',key:'cookieDays',value:'30'}
+            ]}
+        },
+        currentEditIndex: -1,
+        currentPlatform: 'douyin'
+    };
+
+    // ====== 渲染函数 ======
+    function renderStatUsers(){
+        const tb=document.getElementById('stat-user-table');
+        tb.innerHTML=state.stats.users.map(u=>`<tr><td class="table-td">${u.name}</td><td class="table-td">${u.gen}</td><td class="table-td">${u.success}</td><td class="table-td">${u.fail}</td></tr>`).join('');
+    }
+    function renderStatPlatforms(){
+        const tb=document.getElementById('stat-platform-table');
+        tb.innerHTML=state.stats.platforms.map(p=>`<tr><td class="table-td">${p.name}</td><td class="table-td">${p.count}</td><td class="table-td">${p.publish}</td><td class="table-td text-success">${p.rate}</td></tr>`).join('');
+    }
+    function renderUsers(){
+        const tb=document.getElementById('user-table-body');
+        tb.innerHTML=state.users.map((u,i)=>{
+            const roleBadge=u.role==='超级管理员'?'badge-blue':'badge-gray';
+            const statusBadge=u.status==='正常'?'badge-green':'badge-red';
+            const actionBtns=u.status==='正常'
+                ?`<button class="text-primary text-xs mr-2" onclick="openEditUser(${i})">编辑</button><button class="text-warning text-xs mr-2" onclick="toggleUserStatus(${i})">停用</button><button class="text-danger text-xs" onclick="deleteUser(${i})">删除</button>`
+                :`<button class="text-primary text-xs mr-2" onclick="openEditUser(${i})">编辑</button><button class="text-success text-xs mr-2" onclick="toggleUserStatus(${i})">启用</button><button class="text-danger text-xs" onclick="deleteUser(${i})">删除</button>`;
+            return `<tr><td class="table-td">${u.name}</td><td class="table-td"><span class="badge ${roleBadge}">${u.role}</span></td><td class="table-td"><span class="badge ${statusBadge}">${u.status}</span></td><td class="table-td">${u.quota} 条</td><td class="table-td">${u.used} 条</td><td class="table-td text-gray-500">${u.lastLogin}</td><td class="table-td">${actionBtns}</td></tr>`;
+        }).join('');
+    }
+    function renderVoices(){
+        const tb=document.getElementById('voice-table-body');
+        tb.innerHTML=state.voices.map((v,i)=>{
+            const statusBadge=v.status==='启用中'?'badge-green':'badge-gray';
+            const actionBtns=v.status==='启用中'
+                ?`<button class="text-primary text-xs mr-2" onclick="editVoice(${i})">编辑</button><button class="text-warning text-xs" onclick="toggleVoice(${i})">停用</button>`
+                :`<button class="text-primary text-xs mr-2" onclick="editVoice(${i})">编辑</button><button class="text-success text-xs" onclick="toggleVoice(${i})">启用</button>`;
+            return `<tr><td class="table-td">${v.name}</td><td class="table-td font-mono text-xs">${v.id}</td><td class="table-td">${v.type}</td><td class="table-td">${v.scene}</td><td class="table-td"><span class="badge ${statusBadge}">${v.status}</span></td><td class="table-td">${actionBtns}</td></tr>`;
+        }).join('');
+    }
+    function renderPlatformConfig(){
+        const cfg=state.platformConfigs[state.currentPlatform];
+        const form=document.getElementById('platform-config-form');
+        form.innerHTML=`<div class="grid grid-cols-2 gap-4">${cfg.fields.map(f=>`<div><label class="form-label">${f.label}</label><input type="text" class="form-input" value="${f.value}" data-key="${f.key}"></div>`).join('')}</div>`;
+    }
+    function renderVersions(){
+        const tb=document.getElementById('version-table-body');
+        tb.innerHTML=state.versions.map((v,i)=>{
+            const statusClass=v.status==='当前版本'?'badge-green':v.status==='已下架'?'badge-red':'badge-gray';
+            return `<tr><td class="table-td font-medium">${v.ver}</td><td class="table-td text-gray-500">${v.changelog}</td><td class="table-td text-gray-500">${v.time}</td><td class="table-td"><span class="badge ${statusClass}">${v.status}</span></td><td class="table-td">${v.status==='历史版本'?`<button class="text-primary text-xs mr-2" onclick="setCurrentVersion(${i})">设为最新</button><button class="text-danger text-xs" onclick="delistVersion(${i})">下架</button>`:v.status==='当前版本'?`<span class="text-xs text-gray-400">-</span>`:`<span class="text-xs text-gray-400">已下架</span>`}</td></tr>`;
+        }).join('');
+    }
+    function renderLogs(){
+        const level=document.getElementById('log-level-filter').value;
+        const search=document.getElementById('log-search').value.toLowerCase();
+        const filtered=state.logs.filter(l=>(!level||l.level===level)&&(!search||l.action.toLowerCase().includes(search)||l.detail.toLowerCase().includes(search)||l.user.toLowerCase().includes(search)));
+        const tb=document.getElementById('log-table-body');
+        tb.innerHTML=filtered.map(l=>{
+            const levelClass=l.level==='ERROR'?'badge-red':l.level==='WARN'?'badge-blue':'badge-gray';
+            return `<tr><td class="table-td text-gray-500 text-xs">${l.time}</td><td class="table-td"><span class="badge ${levelClass}">${l.level}</span></td><td class="table-td">${l.user}</td><td class="table-td">${l.action}</td><td class="table-td text-gray-500">${l.detail}</td></tr>`;
+        }).join('');
+        document.getElementById('log-count').textContent=`共 ${filtered.length} 条`;
+    }
+
+    // ====== 交互函数 ======
+    function showToast(msg,type='success'){
+        const t=document.createElement('div');
+        t.className=`toast ${type}`;
+        t.innerHTML=`<i class="fa fa-${type==='success'?'check-circle':type==='error'?'exclamation-circle':'info-circle'} mr-2"></i>${msg}`;
+        document.getElementById('toast-container').appendChild(t);
+        setTimeout(()=>t.remove(),3000);
+    }
+    function openModal(id){document.getElementById(id).classList.remove('hidden')}
+    function closeModal(id){document.getElementById(id).classList.add('hidden')}
+
+    function addUser(){
+        const name=document.getElementById('new-username').value.trim();
+        const pwd=document.getElementById('new-password').value;
+        const role=document.getElementById('new-role').value==='admin'?'超级管理员':'普通运营';
+        const quota=parseInt(document.getElementById('new-quota').value)||50;
+        if(!name){showToast('请输入用户名','error');return}
+        if(!pwd){showToast('请输入密码','error');return}
+        state.users.push({name,role,status:'正常',quota,used:0,lastLogin:'-'});
+        renderUsers();closeModal('add-user-modal');
+        document.getElementById('new-username').value='';document.getElementById('new-password').value='';
+        showToast(`用户 ${name} 添加成功`);
+    }
+    function openEditUser(i){
+        state.currentEditIndex=i;
+        const u=state.users[i];
+        document.getElementById('edit-username').value=u.name;
+        document.getElementById('edit-role').value=u.role==='超级管理员'?'admin':'operator';
+        document.getElementById('edit-quota').value=u.quota;
+        document.getElementById('edit-password').value='';
+        openModal('edit-user-modal');
+    }
+    function saveEditUser(){
+        const i=state.currentEditIndex;
+        if(i<0)return;
+        state.users[i].role=document.getElementById('edit-role').value==='admin'?'超级管理员':'普通运营';
+        state.users[i].quota=parseInt(document.getElementById('edit-quota').value)||50;
+        const pwd=document.getElementById('edit-password').value;
+        renderUsers();closeModal('edit-user-modal');
+        showToast(`用户 ${state.users[i].name} 已更新${pwd?'，密码已重置':''}`);
+    }
+    function toggleUserStatus(i){
+        const u=state.users[i];
+        u.status=u.status==='正常'?'已停用':'正常';
+        renderUsers();
+        showToast(`用户 ${u.name} 已${u.status==='正常'?'启用':'停用'}`,u.status==='正常'?'success':'warning');
+    }
+    function deleteUser(i){
+        const name=state.users[i].name;
+        if(!confirm(`确认删除用户 ${name}？`))return;
+        state.users.splice(i,1);renderUsers();
+        showToast(`用户 ${name} 已删除`,'warning');
+    }
+    function addVoice(){
+        const name=document.getElementById('voice-name').value.trim();
+        const id=document.getElementById('voice-id').value.trim();
+        const type=document.getElementById('voice-type').value;
+        const scene=document.getElementById('voice-scene').value.trim();
+        if(!name||!id){showToast('请填写完整信息','error');return}
+        state.voices.push({name,id,type,scene:scene||'通用',status:'启用中'});
+        renderVoices();closeModal('add-voice-modal');
+        document.getElementById('voice-name').value='';document.getElementById('voice-id').value='';document.getElementById('voice-scene').value='';
+        showToast(`音色 ${name} 添加成功`);
+    }
+    function editVoice(i){showToast(`编辑音色 ${state.voices[i].name}（模拟）`)}
+    function toggleVoice(i){
+        const v=state.voices[i];
+        v.status=v.status==='启用中'?'已停用':'启用中';
+        renderVoices();
+        showToast(`音色 ${v.name} 已${v.status==='启用中'?'启用':'停用'}`);
+    }
+    function publishVersion(){
+        const ver=document.getElementById('ver-number').value.trim();
+        const changelog=document.getElementById('ver-changelog').value.trim();
+        if(!ver){showToast('请输入版本号','error');return}
+        if(!changelog){showToast('请输入更新日志','error');return}
+        state.versions.forEach(v=>{if(v.status==='当前版本')v.status='历史版本'});
+        state.versions.unshift({ver,changelog,time:new Date().toLocaleString('zh-CN'),status:'当前版本'});
+        renderVersions();
+        document.getElementById('ver-number').value='';document.getElementById('ver-changelog').value='';
+        showToast(`版本 ${ver} 发布成功`);
+    }
+    function setCurrentVersion(i){
+        state.versions.forEach(v=>{if(v.status==='当前版本')v.status='历史版本'});
+        state.versions[i].status='当前版本';renderVersions();
+        showToast(`已切换到 ${state.versions[i].ver}`);
+    }
+    function delistVersion(i){
+        state.versions[i].status='已下架';renderVersions();
+        showToast(`版本 ${state.versions[i].ver} 已下架`,'warning');
+    }
+    function filterLogs(){renderLogs()}
+
+    // ====== 侧边栏切换 ======
+    const pageTitles={statistics:'数据统计',user:'用户管理',ai:'AI配音配置',platform:'平台接口配置',version:'软件版本管理',log:'系统日志'};
+    document.getElementById('sidebar').addEventListener('click',e=>{
+        const item=e.target.closest('.menu-item');
+        if(!item)return;
+        document.querySelectorAll('.menu-item').forEach(i=>i.classList.remove('active'));
+        item.classList.add('active');
+        const page=item.dataset.page;
+        document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
+        document.getElementById('page-'+page).classList.remove('hidden');
+        document.getElementById('page-title').textContent=pageTitles[page]||'';
+    });
+
+    // 平台配置Tab切换
+    document.getElementById('platform-tabs').addEventListener('click',e=>{
+        const tab=e.target.closest('.tab-item');
+        if(!tab)return;
+        document.querySelectorAll('#platform-tabs .tab-item').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');
+        state.currentPlatform=tab.dataset.platform;
+        renderPlatformConfig();
+    });
+
+    // ====== 初始化 ======
+    document.getElementById('today-date').textContent='今日：'+new Date().toISOString().slice(0,10);
+    renderStatUsers();renderStatPlatforms();renderUsers();renderVoices();renderPlatformConfig();renderVersions();renderLogs();
+    </script>
+</body>
+</html>
