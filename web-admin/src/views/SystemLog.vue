@@ -79,7 +79,8 @@ async function fetchLogs() {
     if (filters.level) params.level = filters.level
     if (filters.keyword) params.keyword = filters.keyword
     const res = await getLogs(params)
-    logs.value = res.data || []
+    const d = res.data || {}
+    logs.value = Array.isArray(d) ? d : (d.list || [])
   } catch (e) {
     showToast(e.message || '获取日志失败', 'error')
   } finally {

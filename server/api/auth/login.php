@@ -8,6 +8,7 @@ $config = require __DIR__ . '/../../config.php';
 $pdo = new PDO(sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_port'], $config['db_name']), $config['db_user'], $config['db_pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 function _ok_lg($d=null,$m='ok'){echo json_encode(['code'=>0,'data'=>$d,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
 function _err_lg($m,$c=400){http_response_code($c);echo json_encode(['code'=>$c,'data'=>null,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+if ($_SERVER['REQUEST_METHOD'] === 'GET') { _ok_lg(null, 'API正常'); exit; }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') _err_lg('方法不允许', 405);
 $i = json_decode(file_get_contents('php://input'), true) ?: [];
 $username = trim($i['username'] ?? ''); $password = $i['password'] ?? '';

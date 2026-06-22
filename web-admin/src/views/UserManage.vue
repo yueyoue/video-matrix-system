@@ -144,7 +144,7 @@ const users = ref([])
 const modalVisible = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
-const form = reactive({ username: '', password: '', role: 'user', quota: 10 })
+const form = reactive({ username: '', password: '', role: 'operator', daily_quota: 50 })
 
 // 删除弹窗
 const deleteModalVisible = ref(false)
@@ -154,7 +154,8 @@ async function fetchUsers() {
   loading.value = true
   try {
     const res = await getUsers()
-    users.value = res.data || []
+    const d = res.data || {}
+    users.value = Array.isArray(d) ? d : (d.list || [])
   } catch (e) {
     showToast(e.message || '获取用户列表失败', 'error')
   } finally {
@@ -165,14 +166,14 @@ async function fetchUsers() {
 function openAddModal() {
   isEdit.value = false
   editId.value = null
-  Object.assign(form, { username: '', password: '', role: 'user', quota: 10 })
+  Object.assign(form, { username: '', password: '', role: 'operator', daily_quota: 50 })
   modalVisible.value = true
 }
 
 function openEditModal(user) {
   isEdit.value = true
   editId.value = user.id
-  Object.assign(form, { username: user.username, password: '', role: user.role, quota: user.quota })
+  Object.assign(form, { username: user.username, password: '', role: user.role, daily_quota: user.daily_quota })
   modalVisible.value = true
 }
 
