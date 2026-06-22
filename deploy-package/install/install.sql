@@ -133,23 +133,23 @@ CREATE TABLE IF NOT EXISTS `{prefix}publish_rule` (
 
 -- 初始数据
 
-INSERT INTO `{prefix}ai_voice` (`name`, `voice_id`, `type`, `scene`) VALUES
+INSERT IGNORE INTO `{prefix}ai_voice` (`name`, `voice_id`, `type`, `scene`) VALUES
 ('温柔女声-小云', 'xiaoyun', 'female', '通用、讲解'),
 ('磁性男声-阿凯', 'akai', 'male', '解说、旁白'),
 ('活力少女-小桃', 'xiaotao', 'female', '娱乐、种草'),
 ('沉稳旁白-老周', 'laozhou', 'male', '纪录片、正式');
 
-INSERT INTO `{prefix}ai_config` (`provider`, `app_id`, `secret_key`, `daily_limit`) VALUES
+INSERT IGNORE INTO `{prefix}ai_config` (`provider`, `app_id`, `secret_key`, `daily_limit`) VALUES
 ('aliyun', '', '', 100);
 
-INSERT INTO `{prefix}platform_config` (`platform`, `config_json`) VALUES
+INSERT IGNORE INTO `{prefix}platform_config` (`platform`, `config_json`) VALUES
 ('douyin', '{"creatorUrl":"https://creator.douyin.com/","loginCheck":"https://creator.douyin.com/api/login/check","videoList":"https://creator.douyin.com/api/videolist","publish":"https://creator.douyin.com/api/publish","publishBtn":".publish-btn","cookieDays":30}'),
 ('kuaishou', '{"creatorUrl":"https://cp.kuaishou.com/","loginCheck":"https://cp.kuaishou.com/api/login/check","videoList":"https://cp.kuaishou.com/api/videolist","publish":"https://cp.kuaishou.com/api/publish","publishBtn":".upload-btn","cookieDays":15}'),
 ('xiaohongshu', '{"creatorUrl":"https://creator.xiaohongshu.com/","loginCheck":"https://creator.xiaohongshu.com/api/login/check","videoList":"https://creator.xiaohongshu.com/api/videolist","publish":"https://creator.xiaohongshu.com/api/publish","publishBtn":".submit-btn","cookieDays":7}'),
 ('weixin', '{"creatorUrl":"https://channels.weixin.qq.com/","loginCheck":"https://channels.weixin.qq.com/api/login/check","videoList":"https://channels.weixin.qq.com/api/videolist","publish":"https://channels.weixin.qq.com/api/publish","publishBtn":".post-btn","cookieDays":30}');
 
-INSERT INTO `{prefix}app_version` (`version`, `changelog`, `status`) VALUES
+INSERT IGNORE INTO `{prefix}app_version` (`version`, `changelog`, `status`) VALUES
 ('v1.0.0', '系统首发版本', 'current');
 
-INSERT INTO `{prefix}operation_log` (`username`, `level`, `module`, `action`, `detail`) VALUES
+INSERT IGNORE INTO `{prefix}operation_log` (`username`, `level`, `module`, `action`, `detail`) VALUES
 ('system', 'INFO', '系统', '系统安装', '系统初始化完成');
