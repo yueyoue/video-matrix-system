@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton,
     QLineEdit, QSpinBox, QComboBox, QTextEdit, QSlider, QFileDialog,
-    QGridLayout, QScrollArea, QSizePolicy, QProgressBar
+    QGridLayout, QScrollArea, QSizePolicy, QProgressBar, QCheckBox
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
