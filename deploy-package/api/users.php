@@ -1,253 +1,73 @@
 <?php
-/**
- * 用户管理接口（管理员）
- * GET    /api/users           - 用户列表
- * POST   /api/users           - 创建用户
- * PUT    /api/users/{id}      - 更新用户
- * DELETE /api/users/{id}      - 删除用户
- * POST   /api/users/{id}/reset - 重置密码
- */
+// CORS & 响应头
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+header('Content-Type: application/json; charset=utf-8');
 
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/auth.php';
-
-adminOnly();
-
-$segments = $GLOBALS['route_segments'];
-$method   = $GLOBALS['route_method'];
-$id       = isset($segments[1]) ? (int)$segments[1] : 0;
-$sub      = $segments[2] ?? '';
-
-// 处理子路由
-if ($sub === 'reset' && $id > 0) {
-    resetPassword($id);
-    exit;
+// 配置 & 数据库
+$config = require __DIR__ . '/../config.php';
+$dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_port'], $config['db_name']);
+$pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]);
+function _tbl($t) { global $config; return $config['db_prefix'] . $t; }
+function _ok($d=null,$m='ok'){echo json_encode(['code'=>0,'data'=>$d,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _err($m,$c=400){http_response_code($c);echo json_encode(['code'=>$c,'data'=>null,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _json(){$r=json_decode(file_get_contents('php://input'),true);return is_array($r)?$r:[];}
+function _jwt_dec($token){
+    global $config;$p=explode('.',$token);if(count($p)!==3)return null;
+    $exp=rtrim(strtr(base64_encode(hash_hmac('sha256',$p[0].".".$p[1],$config['jwt_secret'],true)),'+/','-_'),'=');
+    if(!hash_equals($exp,$p[2]))return null;
+    $d=json_decode(base64_decode(strtr($p[1],'-_','+/')),true);
+    if(!$d||isset($d['exp'])&&$d['exp']<time())return null;return $d;
 }
+function _auth(){
+    $h=$_SERVER['HTTP_AUTHORIZATION']??'';
+    if(!preg_match('/^Bearer\s+(.+)$/i',$h,$m))_err('未提供认证Token',401);
+    $d=_jwt_dec($m[1]);if(!$d)_err('Token无效或已过期',401);
+    return ['user_id'=>$d['user_id'],'username'=>$d['username'],'role'=>$d['role']];
+}
+function _admin(){$u=_auth();if($u['role']!=='admin')_err('权限不足',403);return $u;}
+function _log($u,$lv,$mod,$act,$det=''){global $pdo;try{$pdo->prepare("INSERT INTO "._tbl('operation_log')." (user_id,username,level,module,action,detail) VALUES (?,?,?,?,?,?)")->execute([$u['user_id'],$u['username'],$lv,$mod,$act,$det]);}catch(Exception $e){}}
+
+$method = $_SERVER['REQUEST_METHOD'];
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$segs = array_values(array_filter(explode('/', preg_replace('#^/api/#', '', $uri))));
+if (isset($_GET['_r'])) { $rsegs = array_values(array_filter(explode('/', $_GET['_r']))); $id = $rsegs[0] ?? null; }
+else { $id = $segs[1] ?? null; }
 
 switch ($method) {
     case 'GET':
-        getList();
+        _admin();
+        $page=max(1,(int)($_GET['page']??1));$ps=min(100,max(1,(int)($_GET['pageSize']??20)));
+        $w="1=1";$p=[];
+        if($k=$_GET['keyword']??''){$w.=" AND username LIKE ?";$p[]="%$k%";}
+        if($r=$_GET['role']??''){$w.=" AND role = ?";$p[]=$r;}
+        if($s=$_GET['status']??''){$w.=" AND status = ?";$p[]=$s;}
+        $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl('sys_user')." WHERE $w");$st->execute($p);$tot=$st->fetchColumn();
+        $st=$pdo->prepare("SELECT id,username,role,daily_quota,used_quota,status,last_login,created_at FROM "._tbl('sys_user')." WHERE $w ORDER BY id DESC LIMIT $ps OFFSET ".($page-1)*$ps);
+        $st->execute($p);_ok(['list'=>$st->fetchAll(),'total'=>(int)$tot,'page'=>$page,'pageSize'=>$ps,'pages'=>ceil($tot/$ps)]);
         break;
     case 'POST':
-        create();
+        _admin();$i=_json();$un=trim($i['username']??'');$pw=$i['password']??'';
+        if(!$un||!$pw)_err('用户名和密码不能为空');if(strlen($pw)<6)_err('密码长度不能少于6位');
+        try{$pdo->prepare("INSERT INTO "._tbl('sys_user')." (username,password,role,daily_quota) VALUES (?,?,?,?)")->execute([$un,password_hash($pw,PASSWORD_DEFAULT),$i['role']??'operator',(int)($i['daily_quota']??50)]);}
+        catch(PDOException $e){if($e->getCode()==23000)_err('用户名已存在');throw $e;}
+        $u=_admin();_log($u,'INFO','用户管理','添加用户',"添加用户: $un");
+        _ok(['id'=>$pdo->lastInsertId()],'添加成功');
         break;
     case 'PUT':
-        if ($id > 0) update($id);
-        else error('缺少用户ID');
+        if(!$id)_err('缺少用户ID');_admin();$i=_json();$s=[];$p=[];
+        foreach(['username','role','status']as$f){if(isset($i[$f])){$s[]="$f = ?";$p[]=$i[$f];}}
+        if(isset($i['daily_quota'])){$s[]="daily_quota = ?";$p[]=(int)$i['daily_quota'];}
+        if(isset($i['password'])&&$i['password']){$s[]="password = ?";$p[]=password_hash($i['password'],PASSWORD_DEFAULT);}
+        if($s){$p[]=$id;$pdo->prepare("UPDATE "._tbl('sys_user')." SET ".implode(',',$s)." WHERE id = ?")->execute($p);}
+        $u=_admin();_log($u,'INFO','用户管理','更新用户',"更新用户ID: $id");_ok(null,'更新成功');
         break;
     case 'DELETE':
-        if ($id > 0) remove($id);
-        else error('缺少用户ID');
+        if(!$id)_err('缺少用户ID');_admin();
+        $pdo->prepare("DELETE FROM "._tbl('sys_user')." WHERE id = ?")->execute([$id]);
+        $u=_admin();_log($u,'INFO','用户管理','删除用户',"删除用户ID: $id");_ok(null,'删除成功');
         break;
-    default:
-        error('请求方法不允许', 405);
-}
-
-/**
- * 用户列表
- */
-function getList()
-{
-    global $pdo;
-
-    [$page, $pageSize, $offset] = getPageParams();
-    $keyword = param('keyword', '');
-    $status  = param('status', '');
-
-    $where  = "WHERE 1=1";
-    $params = [];
-
-    if ($keyword) {
-        $where .= " AND username LIKE ?";
-        $params[] = "%{$keyword}%";
-    }
-
-    if ($status) {
-        $where .= " AND status = ?";
-        $params[] = $status;
-    }
-
-    // 总数
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM " . table('sys_user') . " $where");
-    $stmt->execute($params);
-    $total = $stmt->fetchColumn();
-
-    // 列表
-    $stmt = $pdo->prepare("SELECT id, username, role, daily_quota, used_quota, status, last_login, created_at FROM " . table('sys_user') . " $where ORDER BY id DESC LIMIT $pageSize OFFSET $offset");
-    $stmt->execute($params);
-    $list = $stmt->fetchAll();
-
-    paginate($list, $total, $page, $pageSize);
-}
-
-/**
- * 创建用户
- */
-function create()
-{
-    global $pdo;
-
-    $input     = getJsonInput();
-    $username  = trim($input['username'] ?? '');
-    $password  = $input['password'] ?? '';
-    $role      = $input['role'] ?? 'operator';
-    $dailyQuota = (int)($input['daily_quota'] ?? 50);
-
-    if (empty($username) || empty($password)) {
-        error('用户名和密码不能为空');
-    }
-
-    if (strlen($password) < 6) {
-        error('密码长度不能少于6位');
-    }
-
-    if (!in_array($role, ['admin', 'operator'])) {
-        error('角色类型无效');
-    }
-
-    // 检查用户名是否存在
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM " . table('sys_user') . " WHERE username = ?");
-    $stmt->execute([$username]);
-    if ($stmt->fetchColumn() > 0) {
-        error('用户名已存在');
-    }
-
-    $hashed = password_hash($password, PASSWORD_DEFAULT);
-
-    $stmt = $pdo->prepare("INSERT INTO " . table('sys_user') . " (username, password, role, daily_quota) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$username, $hashed, $role, $dailyQuota]);
-
-    $userId = $pdo->lastInsertId();
-
-    $currentUser = getCurrentUser();
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '用户管理', '创建用户', "创建用户: {$username}");
-
-    success(['id' => (int)$userId], '用户创建成功');
-}
-
-/**
- * 更新用户
- */
-function update($id)
-{
-    global $pdo;
-
-    $input = getJsonInput();
-
-    // 检查用户是否存在
-    $stmt = $pdo->prepare("SELECT * FROM " . table('sys_user') . " WHERE id = ?");
-    $stmt->execute([$id]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        error('用户不存在', 404);
-    }
-
-    $fields = [];
-    $params = [];
-
-    if (isset($input['role']) && in_array($input['role'], ['admin', 'operator'])) {
-        $fields[] = "role = ?";
-        $params[] = $input['role'];
-    }
-
-    if (isset($input['daily_quota'])) {
-        $fields[] = "daily_quota = ?";
-        $params[] = (int)$input['daily_quota'];
-    }
-
-    if (isset($input['status']) && in_array($input['status'], ['active', 'disabled'])) {
-        $fields[] = "status = ?";
-        $params[] = $input['status'];
-    }
-
-    if (isset($input['password']) && !empty($input['password'])) {
-        if (strlen($input['password']) < 6) {
-            error('密码长度不能少于6位');
-        }
-        $fields[] = "password = ?";
-        $params[] = password_hash($input['password'], PASSWORD_DEFAULT);
-    }
-
-    if (empty($fields)) {
-        error('没有需要更新的字段');
-    }
-
-    $params[] = $id;
-    $stmt = $pdo->prepare("UPDATE " . table('sys_user') . " SET " . implode(', ', $fields) . " WHERE id = ?");
-    $stmt->execute($params);
-
-    $currentUser = getCurrentUser();
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '用户管理', '更新用户', "更新用户ID: {$id}");
-
-    success(null, '用户更新成功');
-}
-
-/**
- * 删除用户
- */
-function remove($id)
-{
-    global $pdo;
-
-    // 不能删除自己
-    $currentUser = getCurrentUser();
-    if ($currentUser['user_id'] == $id) {
-        error('不能删除当前登录用户');
-    }
-
-    $stmt = $pdo->prepare("SELECT username FROM " . table('sys_user') . " WHERE id = ?");
-    $stmt->execute([$id]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        error('用户不存在', 404);
-    }
-
-    // 删除用户及其关联数据
-    $pdo->prepare("DELETE FROM " . table('platform_account') . " WHERE user_id = ?")->execute([$id]);
-    $pdo->prepare("DELETE FROM " . table('video_task') . " WHERE user_id = ?")->execute([$id]);
-    $pdo->prepare("DELETE FROM " . table('publish_record') . " WHERE user_id = ?")->execute([$id]);
-    $pdo->prepare("DELETE FROM " . table('publish_rule') . " WHERE user_id = ?")->execute([$id]);
-    $pdo->prepare("DELETE FROM " . table('sys_user') . " WHERE id = ?")->execute([$id]);
-
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '用户管理', '删除用户', "删除用户: {$user['username']}");
-
-    success(null, '用户删除成功');
-}
-
-/**
- * 重置密码
- */
-function resetPassword($id)
-{
-    global $pdo;
-
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        error('请求方法不允许', 405);
-    }
-
-    $input    = getJsonInput();
-    $password = $input['password'] ?? '';
-
-    if (empty($password) || strlen($password) < 6) {
-        error('密码不能为空且长度不能少于6位');
-    }
-
-    $stmt = $pdo->prepare("SELECT username FROM " . table('sys_user') . " WHERE id = ?");
-    $stmt->execute([$id]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        error('用户不存在', 404);
-    }
-
-    $hashed = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $pdo->prepare("UPDATE " . table('sys_user') . " SET password = ? WHERE id = ?");
-    $stmt->execute([$hashed, $id]);
-
-    $currentUser = getCurrentUser();
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '用户管理', '重置密码', "重置用户 {$user['username']} 的密码");
-
-    success(null, '密码重置成功');
+    default: _err('方法不允许',405);
 }

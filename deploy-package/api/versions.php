@@ -1,198 +1,50 @@
 <?php
-/**
- * 版本管理接口
- * GET    /api/versions       - 版本列表
- * GET    /api/versions/current - 当前版本
- * POST   /api/versions       - 添加版本（管理员）
- * PUT    /api/versions/{id}  - 更新版本（管理员）
- * DELETE /api/versions/{id}  - 删除版本（管理员）
- */
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+header('Content-Type: application/json; charset=utf-8');
+$config = require __DIR__ . '/../config.php';
+$dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_port'], $config['db_name']);
+$pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+function _tbl_v($t) { global $config; return $config['db_prefix'] . $t; }
+function _ok_v($d=null,$m='ok'){echo json_encode(['code'=>0,'data'=>$d,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _err_v($m,$c=400){http_response_code($c);echo json_encode(['code'=>$c,'data'=>null,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _auth_v(){$h=$_SERVER['HTTP_AUTHORIZATION']??'';if(!preg_match('/^Bearer\s+(.+)$/i',$h,$m))_err_v('未提供认证Token',401);$p=explode('.',$m[1]);if(count($p)!==3)_err_v('Token无效',401);$cfg=require __DIR__.'/../config.php';$exp=rtrim(strtr(base64_encode(hash_hmac('sha256',$p[0].'.'.$p[1],$cfg['jwt_secret'],true)),'+/','-_'),'=');$d=json_decode(base64_decode(strtr($p[1],'-_','+/')),true);if(!$d)_err_v('Token无效',401);return $d;}
+function _admin_v(){$u=_auth_v();if($u['role']!=='admin')_err_v('权限不足',403);return $u;}
+function _json_v(){$r=json_decode(file_get_contents('php://input'),true);return is_array($r)?$r:[];}
 
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/auth.php';
-
-$currentUser = requireAuth();
-$segments    = $GLOBALS['route_segments'];
-$method      = $GLOBALS['route_method'];
-$action      = $segments[1] ?? '';
-$id          = is_numeric($action) ? (int)$action : 0;
-
-if ($action === 'current') {
-    getCurrent();
-    exit;
-}
-
-if ($id > 0) {
-    switch ($method) {
-        case 'PUT':
-            update($id);
-            break;
-        case 'DELETE':
-            remove($id);
-            break;
-        default:
-            error('请求方法不允许', 405);
-    }
-    exit;
-}
+$method = $_SERVER['REQUEST_METHOD'];
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$segs = array_values(array_filter(explode('/', preg_replace('#^/api/#', '', $uri))));
+$id = $segs[1] ?? null;
 
 switch ($method) {
     case 'GET':
-        getList();
+        _auth_v();
+        $st = $pdo->query("SELECT * FROM " . _tbl_v('app_version') . " ORDER BY id DESC");
+        _ok_v($st->fetchAll());
         break;
     case 'POST':
-        create();
+        _admin_v(); $i = _json_v();
+        $v = $i['version'] ?? ''; if (!$v) _err_v('版本号不能为空');
+        $pdo->prepare("INSERT INTO " . _tbl_v('app_version') . " (version, changelog, download_url) VALUES (?, ?, ?)")
+            ->execute([$v, $i['changelog'] ?? '', $i['download_url'] ?? '']);
+        _ok_v(['id' => $pdo->lastInsertId()], '发布成功');
         break;
-    default:
-        error('请求方法不允许', 405);
-}
-
-/**
- * 版本列表
- */
-function getList()
-{
-    global $pdo;
-
-    [$page, $pageSize, $offset] = getPageParams();
-    $status = param('status', '');
-
-    $where  = "WHERE 1=1";
-    $params = [];
-
-    if ($status) {
-        $where .= " AND status = ?";
-        $params[] = $status;
-    }
-
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM " . table('app_version') . " $where");
-    $stmt->execute($params);
-    $total = $stmt->fetchColumn();
-
-    $stmt = $pdo->prepare("SELECT * FROM " . table('app_version') . " $where ORDER BY id DESC LIMIT $pageSize OFFSET $offset");
-    $stmt->execute($params);
-    $list = $stmt->fetchAll();
-
-    paginate($list, $total, $page, $pageSize);
-}
-
-/**
- * 获取当前版本
- */
-function getCurrent()
-{
-    global $pdo;
-
-    $stmt = $pdo->prepare("SELECT * FROM " . table('app_version') . " WHERE status = 'current' ORDER BY id DESC LIMIT 1");
-    $stmt->execute();
-    $version = $stmt->fetch();
-
-    if (!$version) {
-        success(null, '暂无版本信息');
-    }
-
-    success($version);
-}
-
-/**
- * 添加版本
- */
-function create()
-{
-    global $pdo, $currentUser;
-
-    adminOnly();
-
-    $input      = getJsonInput();
-    $version    = trim($input['version'] ?? '');
-    $changelog  = $input['changelog'] ?? '';
-    $downloadUrl = $input['download_url'] ?? '';
-
-    if (empty($version)) {
-        error('版本号不能为空');
-    }
-
-    // 检查版本号是否重复
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM " . table('app_version') . " WHERE version = ?");
-    $stmt->execute([$version]);
-    if ($stmt->fetchColumn() > 0) {
-        error('版本号已存在');
-    }
-
-    $stmt = $pdo->prepare("INSERT INTO " . table('app_version') . " (version, changelog, download_url) VALUES (?, ?, ?)");
-    $stmt->execute([$version, $changelog, $downloadUrl]);
-
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '版本管理', '添加版本', "添加版本: {$version}");
-
-    success(['id' => (int)$pdo->lastInsertId()], '版本添加成功');
-}
-
-/**
- * 更新版本
- */
-function update($id)
-{
-    global $pdo, $currentUser;
-
-    adminOnly();
-
-    $input = getJsonInput();
-
-    $fields = [];
-    $params = [];
-
-    if (isset($input['version'])) {
-        $fields[] = "version = ?";
-        $params[] = trim($input['version']);
-    }
-    if (isset($input['changelog'])) {
-        $fields[] = "changelog = ?";
-        $params[] = $input['changelog'];
-    }
-    if (isset($input['download_url'])) {
-        $fields[] = "download_url = ?";
-        $params[] = $input['download_url'];
-    }
-    if (isset($input['status']) && in_array($input['status'], ['current', 'archived', 'delisted'])) {
-        // 如果设置为current，先把其他的改为archived
-        if ($input['status'] === 'current') {
-            $pdo->prepare("UPDATE " . table('app_version') . " SET status = 'archived' WHERE status = 'current'")->execute();
+    case 'PUT':
+        if (!$id) _err_v('缺少ID'); _admin_v(); $i = _json_v();
+        $s = []; $p = [];
+        foreach (['version', 'changelog', 'download_url', 'status'] as $f) {
+            if (isset($i[$f])) { $s[] = "$f = ?"; $p[] = $i[$f]; }
         }
-        $fields[] = "status = ?";
-        $params[] = $input['status'];
-    }
-
-    if (empty($fields)) {
-        error('没有需要更新的字段');
-    }
-
-    $params[] = $id;
-    $stmt = $pdo->prepare("UPDATE " . table('app_version') . " SET " . implode(', ', $fields) . " WHERE id = ?");
-    $stmt->execute($params);
-
-    success(null, '版本更新成功');
-}
-
-/**
- * 删除版本
- */
-function remove($id)
-{
-    global $pdo, $currentUser;
-
-    adminOnly();
-
-    $stmt = $pdo->prepare("SELECT version FROM " . table('app_version') . " WHERE id = ?");
-    $stmt->execute([$id]);
-    $version = $stmt->fetch();
-
-    if (!$version) {
-        error('版本不存在', 404);
-    }
-
-    $pdo->prepare("DELETE FROM " . table('app_version') . " WHERE id = ?")->execute([$id]);
-
-    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '版本管理', '删除版本', "删除版本: {$version['version']}");
-
-    success(null, '版本删除成功');
+        if ($s) { $p[] = $id; $pdo->prepare("UPDATE " . _tbl_v('app_version') . " SET " . implode(',', $s) . " WHERE id = ?")->execute($p); }
+        _ok_v(null, '更新成功');
+        break;
+    case 'DELETE':
+        if (!$id) _err_v('缺少ID'); _admin_v();
+        $pdo->prepare("DELETE FROM " . _tbl_v('app_version') . " WHERE id = ?")->execute([$id]);
+        _ok_v(null, '删除成功');
+        break;
+    default: _err_v('方法不允许', 405);
 }

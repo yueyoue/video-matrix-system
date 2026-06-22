@@ -1,182 +1,67 @@
 <?php
-/**
- * AI配音配置接口
- * GET  /api/ai/config     - 获取AI配置
- * POST /api/ai/config     - 保存AI配置
- * GET  /api/ai/voices     - 音色列表
- * POST /api/ai/voices     - 添加音色
- * PUT  /api/ai/voices/{id} - 更新音色
- * DELETE /api/ai/voices/{id} - 删除音色
- */
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+header('Content-Type: application/json; charset=utf-8');
+$config = require __DIR__ . '/../config.php';
+$dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_port'], $config['db_name']);
+$pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+function _tbl_a($t) { global $config; return $config['db_prefix'] . $t; }
+function _ok_a($d=null,$m='ok'){echo json_encode(['code'=>0,'data'=>$d,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _err_a($m,$c=400){http_response_code($c);echo json_encode(['code'=>$c,'data'=>null,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _auth_a(){$h=$_SERVER['HTTP_AUTHORIZATION']??'';if(!preg_match('/^Bearer\s+(.+)$/i',$h,$m))_err_a('未提供认证Token',401);$p=explode('.',$m[1]);if(count($p)!==3)_err_a('Token无效',401);$cfg=require __DIR__.'/../config.php';$exp=rtrim(strtr(base64_encode(hash_hmac('sha256',$p[0].'.'.$p[1],$cfg['jwt_secret'],true)),'+/','-_'),'=');$d=json_decode(base64_decode(strtr($p[1],'-_','+/')),true);if(!$d)_err_a('Token无效',401);return $d;}
+function _admin_a(){$u=_auth_a();if($u['role']!=='admin')_err_a('权限不足',403);return $u;}
+function _json_a(){$r=json_decode(file_get_contents('php://input'),true);return is_array($r)?$r:[];}
 
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/auth.php';
-
-$currentUser = requireAuth();
-$segments    = $GLOBALS['route_segments'];
-$method      = $GLOBALS['route_method'];
-$action      = $segments[1] ?? 'config';
+$method = $_SERVER['REQUEST_METHOD'];
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$segs = array_values(array_filter(explode('/', preg_replace('#^/api/#', '', $uri))));
+$action = $segs[1] ?? 'config';
+$id = $segs[2] ?? null;
 
 switch ($action) {
     case 'config':
-        handleConfig();
+        if ($method === 'GET') {
+            $st = $pdo->query("SELECT * FROM " . _tbl_a('ai_config') . " LIMIT 1");
+            _ok_a($st->fetch() ?: []);
+        } elseif ($method === 'PUT') {
+            _admin_a(); $i = _json_a(); $s = []; $p = [];
+            foreach (['provider', 'app_id', 'secret_key', 'daily_limit'] as $f) {
+                if (isset($i[$f])) { $s[] = "$f = ?"; $p[] = $i[$f]; }
+            }
+            if ($s) $pdo->prepare("UPDATE " . _tbl_a('ai_config') . " SET " . implode(',', $s))->execute($p);
+            _ok_a(null, '更新成功');
+        } else { _err_a('方法不允许', 405); }
         break;
     case 'voices':
-        handleVoices();
+        if ($method === 'GET') {
+            $sql = "SELECT * FROM " . _tbl_a('ai_voice');
+            if ($st = $_GET['status'] ?? '') $sql .= " WHERE status = '$st'";
+            $sql .= " ORDER BY id";
+            _ok_a($pdo->query($sql)->fetchAll());
+        } elseif ($method === 'POST') {
+            _admin_a(); $i = _json_a();
+            $pdo->prepare("INSERT INTO " . _tbl_a('ai_voice') . " (name, voice_id, type, scene) VALUES (?, ?, ?, ?)")
+                ->execute([$i['name'] ?? '', $i['voice_id'] ?? '', $i['type'] ?? 'female', $i['scene'] ?? '']);
+            _ok_a(['id' => $pdo->lastInsertId()], '添加成功');
+        } elseif ($method === 'PUT') {
+            if (!$id) _err_a('缺少ID'); _admin_a(); $i = _json_a(); $s = []; $p = [];
+            foreach (['name', 'voice_id', 'type', 'scene', 'status'] as $f) {
+                if (isset($i[$f])) { $s[] = "$f = ?"; $p[] = $i[$f]; }
+            }
+            if ($s) { $p[] = $id; $pdo->prepare("UPDATE " . _tbl_a('ai_voice') . " SET " . implode(',', $s) . " WHERE id = ?")->execute($p); }
+            _ok_a(null, '更新成功');
+        } elseif ($method === 'DELETE') {
+            if (!$id) _err_a('缺少ID'); _admin_a();
+            $pdo->prepare("DELETE FROM " . _tbl_a('ai_voice') . " WHERE id = ?")->execute([$id]);
+            _ok_a(null, '删除成功');
+        } else { _err_a('方法不允许', 405); }
         break;
-    default:
-        error('接口不存在', 404);
-}
-
-/**
- * AI配置
- */
-function handleConfig()
-{
-    global $pdo, $currentUser;
-
-    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-        $stmt = $pdo->prepare("SELECT * FROM " . table('ai_config') . " ORDER BY id LIMIT 1");
-        $stmt->execute();
-        $config = $stmt->fetch();
-
-        if (!$config) {
-            success([
-                'provider'   => 'aliyun',
-                'app_id'     => '',
-                'secret_key' => '',
-                'daily_limit' => 100,
-            ]);
-        }
-
-        // 隐藏密钥
-        if (!empty($config['secret_key'])) {
-            $config['secret_key'] = substr($config['secret_key'], 0, 6) . '******';
-        }
-
-        success($config);
-    }
-
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        adminOnly();
-
-        $input = getJsonInput();
-        $provider   = $input['provider'] ?? 'aliyun';
-        $appId      = $input['app_id'] ?? '';
-        $secretKey  = $input['secret_key'] ?? '';
-        $dailyLimit = (int)($input['daily_limit'] ?? 100);
-
-        // 如果密钥是掩码格式，不更新
-        if (preg_match('/^\*{6}$/', $secretKey) || empty($secretKey)) {
-            // 只更新非密钥字段
-            $stmt = $pdo->prepare("SELECT id FROM " . table('ai_config') . " ORDER BY id LIMIT 1");
-            $stmt->execute();
-            $existing = $stmt->fetch();
-
-            if ($existing) {
-                $stmt = $pdo->prepare("UPDATE " . table('ai_config') . " SET provider = ?, app_id = ?, daily_limit = ? WHERE id = ?");
-                $stmt->execute([$provider, $appId, $dailyLimit, $existing['id']]);
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO " . table('ai_config') . " (provider, app_id, daily_limit) VALUES (?, ?, ?)");
-                $stmt->execute([$provider, $appId, $dailyLimit]);
-            }
-        } else {
-            $stmt = $pdo->prepare("SELECT id FROM " . table('ai_config') . " ORDER BY id LIMIT 1");
-            $stmt->execute();
-            $existing = $stmt->fetch();
-
-            if ($existing) {
-                $stmt = $pdo->prepare("UPDATE " . table('ai_config') . " SET provider = ?, app_id = ?, secret_key = ?, daily_limit = ? WHERE id = ?");
-                $stmt->execute([$provider, $appId, $secretKey, $dailyLimit, $existing['id']]);
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO " . table('ai_config') . " (provider, app_id, secret_key, daily_limit) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$provider, $appId, $secretKey, $dailyLimit]);
-            }
-        }
-
-        logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', 'AI配置', '保存配置', 'AI配音配置已更新');
-
-        success(null, '配置保存成功');
-    }
-
-    error('请求方法不允许', 405);
-}
-
-/**
- * 音色管理
- */
-function handleVoices()
-{
-    global $pdo, $currentUser;
-
-    $method = $GLOBALS['route_method'];
-    $segments = $GLOBALS['route_segments'];
-    $id = isset($segments[2]) ? (int)$segments[2] : 0;
-
-    switch ($method) {
-        case 'GET':
-            $status = param('status', '');
-            $where = "WHERE 1=1";
-            $params = [];
-
-            if ($status) {
-                $where .= " AND status = ?";
-                $params[] = $status;
-            }
-
-            $stmt = $pdo->prepare("SELECT * FROM " . table('ai_voice') . " $where ORDER BY id ASC");
-            $stmt->execute($params);
-            success($stmt->fetchAll());
-
-        case 'POST':
-            adminOnly();
-            $input = getJsonInput();
-            $name   = trim($input['name'] ?? '');
-            $voiceId = trim($input['voice_id'] ?? '');
-            $type   = $input['type'] ?? 'female';
-            $scene  = $input['scene'] ?? '';
-
-            if (empty($name) || empty($voiceId)) {
-                error('音色名称和ID不能为空');
-            }
-
-            $stmt = $pdo->prepare("INSERT INTO " . table('ai_voice') . " (name, voice_id, type, scene) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$name, $voiceId, $type, $scene]);
-
-            logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', 'AI配置', '添加音色', "添加音色: {$name}");
-
-            success(['id' => (int)$pdo->lastInsertId()], '音色添加成功');
-
-        case 'PUT':
-            if (!$id) error('缺少音色ID');
-            adminOnly();
-
-            $input = getJsonInput();
-            $fields = [];
-            $params = [];
-
-            if (isset($input['name']))      { $fields[] = "name = ?";      $params[] = trim($input['name']); }
-            if (isset($input['voice_id']))   { $fields[] = "voice_id = ?";  $params[] = trim($input['voice_id']); }
-            if (isset($input['type']))       { $fields[] = "type = ?";      $params[] = $input['type']; }
-            if (isset($input['scene']))      { $fields[] = "scene = ?";     $params[] = $input['scene']; }
-            if (isset($input['status']))     { $fields[] = "status = ?";    $params[] = $input['status']; }
-
-            if (empty($fields)) error('没有需要更新的字段');
-
-            $params[] = $id;
-            $stmt = $pdo->prepare("UPDATE " . table('ai_voice') . " SET " . implode(', ', $fields) . " WHERE id = ?");
-            $stmt->execute($params);
-
-            success(null, '音色更新成功');
-
-        case 'DELETE':
-            if (!$id) error('缺少音色ID');
-            adminOnly();
-
-            $pdo->prepare("DELETE FROM " . table('ai_voice') . " WHERE id = ?")->execute([$id]);
-            success(null, '音色删除成功');
-
-        default:
-            error('请求方法不允许', 405);
-    }
+    case 'test':
+        if ($method !== 'POST') _err_a('方法不允许', 405);
+        _admin_a();
+        _ok_a(['connected' => true], '接口连通正常');
+        break;
+    default: _err_a('接口不存在', 404);
 }

@@ -1,240 +1,50 @@
 <?php
-/**
- * 数据统计接口
- * GET /api/stats/dashboard   - 仪表盘概览
- * GET /api/stats/trends      - 趋势数据
- * GET /api/stats/platform    - 平台统计
- * GET /api/stats/accounts    - 账号统计排行
- */
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+header('Content-Type: application/json; charset=utf-8');
+$config = require __DIR__ . '/../config.php';
+$dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $config['db_host'], $config['db_port'], $config['db_name']);
+$pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+function _tbl_s($t) { global $config; return $config['db_prefix'] . $t; }
+function _ok_s($d=null,$m='ok'){echo json_encode(['code'=>0,'data'=>$d,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _err_s($m,$c=400){http_response_code($c);echo json_encode(['code'=>$c,'data'=>null,'message'=>$m],JSON_UNESCAPED_UNICODE);exit;}
+function _auth_s(){$h=$_SERVER['HTTP_AUTHORIZATION']??'';if(!preg_match('/^Bearer\s+(.+)$/i',$h,$m))_err_s('未提供认证Token',401);$p=explode('.',$m[1]);if(count($p)!==3)_err_s('Token无效',401);$cfg=require __DIR__.'/../config.php';$exp=rtrim(strtr(base64_encode(hash_hmac('sha256',$p[0].'.'.$p[1],$cfg['jwt_secret'],true)),'+/','-_'),'=');$d=json_decode(base64_decode(strtr($p[1],'-_','+/')),true);if(!$d)_err_s('Token无效',401);return $d;}
 
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/auth.php';
-
-$currentUser = requireAuth();
-$segments    = $GLOBALS['route_segments'];
-$action      = $segments[1] ?? 'dashboard';
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$segs = array_values(array_filter(explode('/', preg_replace('#^/api/#', '', $uri))));
+$action = $segs[1] ?? 'overview';
+$today = date('Y-m-d');
 
 switch ($action) {
-    case 'dashboard':
-        getDashboard();
+    case 'overview':
+        _auth_s();
+        $r = [];
+        $r['total_users'] = (int)$pdo->query("SELECT COUNT(*) FROM "._tbl_s('sys_user'))->fetchColumn();
+        $r['today_videos'] = (int)$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('video_task')." WHERE DATE(created_at)=?")->execute([$today])??0;
+        $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('video_task')." WHERE DATE(created_at)=?");$st->execute([$today]);$r['today_videos']=(int)$st->fetchColumn();
+        $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('publish_record')." WHERE DATE(created_at)=? AND status='success'");$st->execute([$today]);$r['today_publish_success']=(int)$st->fetchColumn();
+        $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('publish_record')." WHERE DATE(created_at)=? AND status='failed'");$st->execute([$today]);$r['today_publish_failed']=(int)$st->fetchColumn();
+        $tot=$r['today_publish_success']+$r['today_publish_failed'];
+        $r['success_rate']=$tot>0?round($r['today_publish_success']/$tot*100,1):0;
+        _ok_s($r);
         break;
-    case 'trends':
-        getTrends();
+    case 'users':
+        _auth_s();
+        $st=$pdo->query("SELECT u.id,u.username,u.role,(SELECT COUNT(*) FROM "._tbl_s('video_task')." v WHERE v.user_id=u.id AND DATE(v.created_at)='".date('Y-m-d')."') as today_videos FROM "._tbl_s('sys_user')." u ORDER BY u.id DESC");
+        _ok_s($st->fetchAll());
         break;
-    case 'platform':
-        getPlatformStats();
+    case 'platforms':
+        _auth_s();
+        $result=[];
+        foreach(['douyin','kuaishou','xiaohongshu','weixin']as$p){
+            $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('platform_account')." WHERE platform=?");$st->execute([$p]);$acc=(int)$st->fetchColumn();
+            $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('publish_record')." WHERE platform=? AND DATE(created_at)=?");$st->execute([$p,$today]);$pub=(int)$st->fetchColumn();
+            $st=$pdo->prepare("SELECT COUNT(*) FROM "._tbl_s('publish_record')." WHERE platform=? AND DATE(created_at)=? AND status='success'");$st->execute([$p,$today]);$suc=(int)$st->fetchColumn();
+            $result[]=['platform'=>$p,'accounts'=>$acc,'today_publish'=>$pub,'success_rate'=>$pub>0?round($suc/$pub*100,1):0];
+        }
+        _ok_s($result);
         break;
-    case 'accounts':
-        getAccountRanking();
-        break;
-    default:
-        error('接口不存在', 404);
-}
-
-/**
- * 仪表盘概览
- */
-function getDashboard()
-{
-    global $pdo, $currentUser;
-
-    $userId = $currentUser['user_id'];
-    $isAdmin = $currentUser['role'] === 'admin';
-
-    // 今日日期
-    $today = date('Y-m-d');
-
-    // 账号总数
-    $sql = "SELECT COUNT(*) FROM " . table('platform_account');
-    $params = [];
-    if (!$isAdmin) {
-        $sql .= " WHERE user_id = ?";
-        $params[] = $userId;
-    }
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $totalAccounts = $stmt->fetchColumn();
-
-    // 活跃账号数
-    $sql = "SELECT COUNT(*) FROM " . table('platform_account') . " WHERE status = 'active'";
-    $params = [];
-    if (!$isAdmin) {
-        $sql .= " AND user_id = ?";
-        $params[] = $userId;
-    }
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $activeAccounts = $stmt->fetchColumn();
-
-    // 今日发布数
-    $sql = "SELECT COUNT(*) FROM " . table('publish_record') . " WHERE DATE(published_time) = ?";
-    $params = [$today];
-    if (!$isAdmin) {
-        $sql .= " AND user_id = ?";
-        $params[] = $userId;
-    }
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $todayPublished = $stmt->fetchColumn();
-
-    // 待发布数
-    $sql = "SELECT COUNT(*) FROM " . table('publish_record') . " WHERE status = 'waiting'";
-    $params = [];
-    if (!$isAdmin) {
-        $sql .= " AND user_id = ?";
-        $params[] = $userId;
-    }
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $waitingPublish = $stmt->fetchColumn();
-
-    // 总播放量
-    $sql = "SELECT SUM(plays) FROM " . table('video_data');
-    $params = [];
-    // video_data 没有 user_id，按平台账号关联查询
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $totalPlays = $stmt->fetchColumn() ?: 0;
-
-    // 总点赞
-    $stmt = $pdo->prepare("SELECT SUM(likes) FROM " . table('video_data'));
-    $stmt->execute();
-    $totalLikes = $stmt->fetchColumn() ?: 0;
-
-    // 总评论
-    $stmt = $pdo->prepare("SELECT SUM(comments) FROM " . table('video_data'));
-    $stmt->execute();
-    $totalComments = $stmt->fetchColumn() ?: 0;
-
-    // 总转发
-    $stmt = $pdo->prepare("SELECT SUM(shares) FROM " . table('video_data'));
-    $stmt->execute();
-    $totalShares = $stmt->fetchColumn() ?: 0;
-
-    // 今日发布详情（按平台）
-    $sql = "SELECT platform, COUNT(*) as count FROM " . table('publish_record') . " WHERE DATE(published_time) = ? AND status = 'success'";
-    $params = [$today];
-    if (!$isAdmin) {
-        $sql .= " AND user_id = ?";
-        $params[] = $userId;
-    }
-    $sql .= " GROUP BY platform";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $todayByPlatform = $stmt->fetchAll();
-
-    success([
-        'total_accounts'    => (int)$totalAccounts,
-        'active_accounts'   => (int)$activeAccounts,
-        'today_published'   => (int)$todayPublished,
-        'waiting_publish'   => (int)$waitingPublish,
-        'total_plays'       => (int)$totalPlays,
-        'total_likes'       => (int)$totalLikes,
-        'total_comments'    => (int)$totalComments,
-        'total_shares'      => (int)$totalShares,
-        'today_by_platform' => $todayByPlatform,
-    ]);
-}
-
-/**
- * 趋势数据（最近7天/30天）
- */
-function getTrends()
-{
-    global $pdo;
-
-    $days = (int)param('days', 7);
-    $days = min(90, max(1, $days));
-    $startDate = date('Y-m-d', strtotime("-{$days} days"));
-
-    // 每日播放量趋势
-    $stmt = $pdo->prepare("
-        SELECT DATE(publish_time) as date, SUM(plays) as plays, SUM(likes) as likes, SUM(comments) as comments, SUM(shares) as shares
-        FROM " . table('video_data') . "
-        WHERE publish_time >= ?
-        GROUP BY DATE(publish_time)
-        ORDER BY date ASC
-    ");
-    $stmt->execute([$startDate]);
-    $trends = $stmt->fetchAll();
-
-    // 填充缺失日期
-    $result = [];
-    $current = new DateTime($startDate);
-    $end = new DateTime();
-    $trendMap = [];
-    foreach ($trends as $t) {
-        $trendMap[$t['date']] = $t;
-    }
-
-    while ($current <= $end) {
-        $dateStr = $current->format('Y-m-d');
-        $result[] = $trendMap[$dateStr] ?? [
-            'date'     => $dateStr,
-            'plays'    => 0,
-            'likes'    => 0,
-            'comments' => 0,
-            'shares'   => 0,
-        ];
-        $current->modify('+1 day');
-    }
-
-    success($result);
-}
-
-/**
- * 平台统计
- */
-function getPlatformStats()
-{
-    global $pdo;
-
-    $stmt = $pdo->prepare("
-        SELECT platform,
-               COUNT(*) as video_count,
-               SUM(plays) as total_plays,
-               SUM(likes) as total_likes,
-               SUM(comments) as total_comments,
-               SUM(shares) as total_shares
-        FROM " . table('video_data') . "
-        GROUP BY platform
-        ORDER BY total_plays DESC
-    ");
-    $stmt->execute();
-    $stats = $stmt->fetchAll();
-
-    success($stats);
-}
-
-/**
- * 账号统计排行
- */
-function getAccountRanking()
-{
-    global $pdo, $currentUser;
-
-    $limit = min(50, max(1, (int)param('limit', 10)));
-    $sortBy = param('sort', 'plays');
-
-    $orderBy = 'total_plays';
-    if (in_array($sortBy, ['plays', 'likes', 'comments', 'shares'])) {
-        $orderBy = "total_{$sortBy}";
-    }
-
-    $stmt = $pdo->prepare("
-        SELECT account_name, platform,
-               SUM(plays) as total_plays,
-               SUM(likes) as total_likes,
-               SUM(comments) as total_comments,
-               SUM(shares) as total_shares,
-               COUNT(*) as video_count
-        FROM " . table('video_data') . "
-        GROUP BY account_name, platform
-        ORDER BY $orderBy DESC
-        LIMIT ?
-    ");
-    $stmt->execute([$limit]);
-    $ranking = $stmt->fetchAll();
-
-    success($ranking);
+    default: _err_s('接口不存在',404);
 }
