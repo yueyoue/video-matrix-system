@@ -130,13 +130,22 @@ class _MixWorker(QThread):
         try:
             task = dm.get_mix_task(self.task_id)
             if not task:
+                self._debug_log(f"混剪任务不存在: {self.task_id}")
                 self.failed.emit("混剪任务不存在")
                 return
 
             dm.update_mix_task_progress(self.task_id, 0, "running")
-            combinations = task["combinations"]
+            combinations = task.get("combinations", [])
             total = len(combinations)
             basket_id = task["basket_id"]
+
+            self._debug_log(f"混剪任务开始: task_id={self.task_id}, 组合数={total}, basket_id={basket_id}")
+
+            if total == 0:
+                self._debug_log("组合数为0，无法混剪")
+                dm.update_mix_task_progress(self.task_id, 0, "error")
+                self.failed.emit("组合数为0，请检查篮子中是否有裁切好的片段")
+                return
 
             # 混剪输出目录
             mix_dir = dm.MIXED_DIR / self.task_id
@@ -151,6 +160,8 @@ class _MixWorker(QThread):
                 # 获取片段信息
                 clips = dm.get_clips_by_ids(clip_ids)
                 clip_paths = [c["path"] for c in clips]
+
+                self._debug_log(f"混剪 {idx+1}/{total}: {len(clips)} 个片段")
 
                 # 混剪文件名
                 mix_name = f"混剪_{idx+1}"
@@ -167,8 +178,15 @@ class _MixWorker(QThread):
             self.progress.emit("混剪完成!", 100)
             self.done.emit(self.task_id)
         except Exception as e:
+            import traceback
+            err_detail = traceback.format_exc()
+            self._debug_log(f"混剪异常: {e}\n{err_detail}")
             dm.update_mix_task_progress(self.task_id, 0, "error")
             self.failed.emit(str(e))
+
+    def _debug_log(self, msg):
+        from ..api import _debug_log
+        _debug_log(f"[MixWorker] {msg}")
 
 
 # ══════════════════════════════════════════════════════════════
