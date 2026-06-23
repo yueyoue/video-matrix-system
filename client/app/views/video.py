@@ -98,33 +98,55 @@ class _MixWorker(QThread):
             task = dm.get_mix_task(self.task_id)
             if not task: self.failed.emit("混剪任务不存在"); return
             dm.update_mix_task_progress(self.task_id, 0, "running")
-            combinations = task.get("combinations", [])
+            basket_id = task["basket_id"]
+            segments_per_video = task.get("segments_per_video", 1)
+            clips_by_src = dm.get_basket_clips_by_source(basket_id)
+            sources = sorted(clips_by_src.keys())
+            if not sources:
+                dm.update_mix_task_progress(self.task_id, 0, "error")
+                self.failed.emit("篮子中没有片段，请先完成裁切"); return
+            min_clips = min(len(clips_by_src[s]) for s in sources)
+            if segments_per_video > min_clips:
+                segments_per_video = min_clips
+            from itertools import product
+            if segments_per_video == 1:
+                source_clips = [clips_by_src[s] for s in sources]
+                combinations = [[c["id"] for c in combo] for combo in product(*source_clips)]
+            else:
+                source_clip_groups = []
+                for s in sources:
+                    clips = clips_by_src[s]
+                    groups = [clips[i:i+segments_per_video] for i in range(len(clips) - segments_per_video + 1)]
+                    source_clip_groups.append(groups)
+                combinations = []
+                for combo in product(*source_clip_groups):
+                    ids = []
+                    for group in combo:
+                        ids.extend([c["id"] for c in group])
+                    combinations.append(ids)
             total = len(combinations)
+            _debug_log(f"[MixWorker] 混剪开始: 组合数={total}, 篮子={basket_id}")
             if total == 0:
                 dm.update_mix_task_progress(self.task_id, 0, "error")
-                self.failed.emit("组合数为0"); return
+                self.failed.emit("无法生成组合"); return
+            dm.update_mix_task_total(self.task_id, total)
             mix_dir = dm.MIXED_DIR / self.task_id
             mix_dir.mkdir(parents=True, exist_ok=True)
             for idx, clip_ids in enumerate(combinations):
                 self.progress.emit(f"混剪 {idx+1}/{total}", int(idx/total*100))
                 clips = dm.get_clips_by_ids(clip_ids)
                 clip_paths = [c["path"] for c in clips]
+                if not clip_paths: continue
                 mix_name = f"混剪_{idx+1}"
                 out_path = str(mix_dir / f"{mix_name}.mp4")
-                # 选择文字+音频组合
-                audio_path = None
-                subtitle_text = ""
+                audio_path = None; subtitle_text = ""
                 if self.audio_combos:
-                    if self.audio_mode == "random":
-                        combo = random.choice(self.audio_combos)
-                    else:
-                        combo = self.audio_combos[idx % len(self.audio_combos)]
+                    combo = random.choice(self.audio_combos) if self.audio_mode == "random" else self.audio_combos[idx % len(self.audio_combos)]
                     audio_path = combo.get("audio")
                     subtitle_text = combo.get("text", "")
                 ffmpeg.mix_videos(clip_paths, out_path, bg_audio=audio_path)
                 if subtitle_text:
-                    try:
-                        ffmpeg.add_subtitle(out_path, subtitle_text)
+                    try: ffmpeg.add_subtitle(out_path, subtitle_text)
                     except: pass
                 dm.add_mixed_result(self.task_id, mix_name, out_path, clip_ids)
                 dm.update_mix_task_progress(self.task_id, idx+1)
@@ -133,6 +155,7 @@ class _MixWorker(QThread):
             self.done.emit(self.task_id)
         except Exception as e:
             import traceback
+            from ..api import _debug_log
             _debug_log(f"[MixWorker] 异常: {e}\n{traceback.format_exc()}")
             dm.update_mix_task_progress(self.task_id, 0, "error")
             self.failed.emit(str(e))

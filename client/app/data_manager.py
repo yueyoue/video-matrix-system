@@ -422,6 +422,20 @@ def update_mix_task_progress(task_id: str, completed: int, status: str = None):
     _save_db(db)
 
 
+def update_mix_task_total(task_id: str, total: int):
+    """更新混剪任务的总组合数"""
+    db = _load_db()
+    for t in db.get("mix_tasks", []):
+        if t["id"] == task_id:
+            t["total"] = total
+            break
+    for b in db.get("baskets", []):
+        if b["id"] == task_id:
+            b["mix_total"] = total
+            break
+    _save_db(db)
+
+
 def add_mixed_result(task_id: str, mix_name: str, file_path: str, clip_ids: list):
     """记录一个混剪完成的结果"""
     db = _load_db()
