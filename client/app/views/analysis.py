@@ -210,10 +210,12 @@ class AnalysisView(QWidget):
         self._load()
 
     def _load(self):
+        from ..api import _debug_log
         params = self._get_params()
+        _debug_log(f"[Analysis] 查询参数: {params}, 页码: {self._page}")
         self._worker = _AnalysisWorker(params, self._page)
         self._worker.done.connect(self._on_data)
-        self._worker.failed.connect(lambda m: Toast.error(self, f"查询失败: {m}"))
+        self._worker.failed.connect(lambda m: (Toast.error(self, f"查询失败: {m}\n调试日志: ~/.video-matrix/debug.log"), _debug_log(f"[Analysis] 查询失败: {m}")))
         self._worker.start()
 
     def _on_data(self, data: dict):

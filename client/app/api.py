@@ -1,10 +1,25 @@
 """HTTP API client wrapper — matches server routes."""
 
 import os
+import sys
 import requests
+import traceback
+from datetime import datetime
 from typing import Any
 
 from .auth import auth
+
+# ── Debug logging ──────────────────────────────────────────────
+_debug_log_path = os.path.join(os.path.expanduser('~'), '.video-matrix', 'debug.log')
+
+def _debug_log(msg: str):
+    """Write debug info to log file."""
+    try:
+        os.makedirs(os.path.dirname(_debug_log_path), exist_ok=True)
+        with open(_debug_log_path, 'a', encoding='utf-8') as f:
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
 
 # Allow overriding via environment variable or config file
 import json as _json
@@ -56,6 +71,8 @@ def _headers() -> dict:
 
 
 def _handle(resp: requests.Response) -> Any:
+    _debug_log(f"API响应: {resp.status_code} {resp.url}")
+    _debug_log(f"响应内容: {resp.text[:500]}")
     if resp.status_code == 401:
         auth.clear()
         raise ApiError(401, "登录已过期，请重新登录")
@@ -63,6 +80,7 @@ def _handle(resp: requests.Response) -> Any:
         data = resp.json()
     except Exception:
         data = {"message": resp.text or "未知错误"}
+        _debug_log(f"JSON解析失败: {resp.text[:200]}")
     if resp.status_code >= 400:
         raise ApiError(resp.status_code, data.get("message", f"请求失败 ({resp.status_code})"))
     return data

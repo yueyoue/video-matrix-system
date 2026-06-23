@@ -125,6 +125,10 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._stack, 1)
         main_layout.addWidget(right, 1)
 
+        # 首次显示时加载默认页面数据
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(300, self._load_initial_page)
+
         # page titles
         self._page_titles = {
             "dashboard": "数据总览",
@@ -135,6 +139,14 @@ class MainWindow(QMainWindow):
             "config": "接口配置",
             "log": "日志中心",
         }
+
+    def _load_initial_page(self):
+        """Load data for the initial page (dashboard)."""
+        from ..api import _debug_log
+        _debug_log("[MainWindow] 初始加载仪表盘数据")
+        page = self._pages.get("dashboard")
+        if hasattr(page, "load_data"):
+            page.load_data()
 
     def _on_menu_changed(self, key: str):
         idx = self.PAGE_KEYS.index(key) if key in self.PAGE_KEYS else 0

@@ -7,11 +7,36 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' }
 })
 
-// 请求拦截器 - 添加 Token
+// 请求拦截器 - 添加 Token 和 .php 后缀
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // 自动添加 .php 后缀，nginx 直接匹配 .php 文件
+  // /stats/overview → /stats.php?_r=overview
+  // /auth/login → /auth/login.php
+  // /users/5    → /users.php?_r=5
+  if (config.url && !config.url.endsWith('.php')) {
+    let url = config.url
+    let query = ''
+    const qi = url.indexOf('?')
+    if (qi !== -1) { query = url.slice(qi); url = url.slice(0, qi) }
+    const parts = url.split('/').filter(Boolean)
+    if (parts.length === 1) {
+      config.url = '/' + parts[0] + '.php' + query
+    } else if (parts.length >= 2) {
+      const first = parts[0]
+      const rest = parts.slice(1)
+      if (['auth', 'ai'].includes(first)) {
+        // 子目录结构: auth/login.php, ai/config.php
+        config.url = '/' + first + '/' + rest.join('/') + '.php' + query
+      } else {
+        // 扁平结构: stats.php?_r=overview, users.php?_r=5
+        const sep = query ? '&' : '?'
+        config.url = '/' + first + '.php' + query + sep + '_r=' + rest.join('/')
+      }
+    }
   }
   return config
 }, error => Promise.reject(error))

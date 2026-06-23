@@ -24,7 +24,9 @@ if (strpos($path, '/api/') === 0) {
     // 设置全局路由变量供 API 文件使用
     $GLOBALS['route_segments'] = $segments;
     $GLOBALS['route_method']   = $_SERVER['REQUEST_METHOD'];
-    $file = __DIR__ . '/api/' . ($segments[0] ?? '') . '.php';
+    // 去掉 .php 后缀，兼容带 .php 和不带 .php 的请求
+    $firstSeg = preg_replace('/\.php$/', '', $segments[0] ?? '');
+    $file = __DIR__ . '/api/' . $firstSeg . '.php';
 
     if (file_exists($file)) {
         require $file;

@@ -105,6 +105,8 @@ class DashboardView(QWidget):
         layout.addLayout(bottom, 1)
 
     def load_data(self):
+        from ..api import _debug_log, BASE_URL
+        _debug_log(f"[Dashboard] 开始加载数据, 服务器: {BASE_URL}")
         self._worker = _DataWorker()
         self._worker.done.connect(self._on_data)
         self._worker.failed.connect(self._on_error)
@@ -112,10 +114,11 @@ class DashboardView(QWidget):
 
     def _on_data(self, data: dict):
         d = data.get("data", data)
-        self._card_gen.set_value(str(d.get("today_videos", d.get("totalVideos", d.get("videoCount", 0)))))
-        self._card_ok.set_value(str(d.get("today_publish_success", d.get("publishSuccess", d.get("successCount", 0)))))
-        self._card_fail.set_value(str(d.get("today_publish_failed", d.get("publishFailed", d.get("failCount", 0)))))
-        self._card_acc.set_value(str(d.get("total_users", d.get("accountCount", d.get("totalAccounts", 0)))))
+        # 服务端返回 snake_case 字段名
+        self._card_gen.set_value(str(d.get("today_videos", d.get("videoCount", 0))))
+        self._card_ok.set_value(str(d.get("today_publish_success", d.get("successCount", 0))))
+        self._card_fail.set_value(str(d.get("today_publish_failed", d.get("failCount", 0))))
+        self._card_acc.set_value(str(d.get("total_users", d.get("accountCount", 0))))
 
         # recent records
         records = d.get("recentPublish", d.get("recent", []))
@@ -154,4 +157,7 @@ class DashboardView(QWidget):
                 self._alert_list.addWidget(al)
 
     def _on_error(self, msg: str):
-        Toast.error(self, f"加载数据失败: {msg}")
+        from ..api import _debug_log, BASE_URL
+        _debug_log(f"[Dashboard] 加载失败: {msg}")
+        _debug_log(f"[Dashboard] 服务器地址: {BASE_URL}")
+        Toast.error(self, f"加载数据失败: {msg}\n\n调试日志已写入: ~/.video-matrix/debug.log")

@@ -1,4 +1,46 @@
 <?php
+// 如果已通过 index.php 路由加载（includes 已定义），跳过自包含初始化
+if (function_exists('success')) {
+    // 已经通过 index.php 路由加载，使用全局函数
+    // 解析路由
+    $segments = $GLOBALS['route_segments'] ?? [];
+    $action = $segments[1] ?? 'overview';
+    $today = date('Y-m-d');
+    global $pdo;
+    switch ($action) {
+        case 'overview':
+            $currentUser = requireAuth();
+            $r = [];
+            $r['total_users'] = (int)$pdo->query('SELECT COUNT(*) FROM ' . table('sys_user'))->fetchColumn();
+            $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('video_task') . ' WHERE DATE(created_at)=?'); $st->execute([$today]); $r['today_videos'] = (int)$st->fetchColumn();
+            $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('publish_record') . ' WHERE DATE(created_at)=? AND status=?'); $st->execute([$today, 'success']); $r['today_publish_success'] = (int)$st->fetchColumn();
+            $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('publish_record') . ' WHERE DATE(created_at)=? AND status=?'); $st->execute([$today, 'failed']); $r['today_publish_failed'] = (int)$st->fetchColumn();
+            $tot = $r['today_publish_success'] + $r['today_publish_failed'];
+            $r['success_rate'] = $tot > 0 ? round($r['today_publish_success'] / $tot * 100, 1) : 0;
+            success($r);
+            break;
+        case 'users':
+            $currentUser = requireAuth();
+            $st = $pdo->query('SELECT u.id,u.username,u.role,(SELECT COUNT(*) FROM ' . table('video_task') . ' v WHERE v.user_id=u.id AND DATE(v.created_at)=\'' . date('Y-m-d') . '\') as today_videos FROM ' . table('sys_user') . ' u ORDER BY u.id DESC');
+            success($st->fetchAll());
+            break;
+        case 'platforms':
+            $currentUser = requireAuth();
+            $result = [];
+            foreach (['douyin','kuaishou','xiaohongshu','weixin'] as $p) {
+                $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('platform_account') . ' WHERE platform=?'); $st->execute([$p]); $acc = (int)$st->fetchColumn();
+                $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('publish_record') . ' WHERE platform=? AND DATE(created_at)=?'); $st->execute([$p, $today]); $pub = (int)$st->fetchColumn();
+                $st = $pdo->prepare('SELECT COUNT(*) FROM ' . table('publish_record') . ' WHERE platform=? AND DATE(created_at)=? AND status=?'); $st->execute([$p, $today, 'success']); $suc = (int)$st->fetchColumn();
+                $result[] = ['platform'=>$p, 'accounts'=>$acc, 'today_publish'=>$pub, 'success_rate'=>$pub>0?round($suc/$pub*100,1):0];
+            }
+            success($result);
+            break;
+        default: error('接口不存在', 404);
+    }
+    exit;
+}
+
+// 自包含模式（直接访问 .php 文件）
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
