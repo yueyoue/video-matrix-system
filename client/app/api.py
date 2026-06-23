@@ -145,8 +145,9 @@ def delete_video(video_id: int) -> dict:
 
 
 # ── Publish ────────────────────────────────────────────────────
-def get_publish_queue() -> dict:
-    return _handle(requests.get(_api_url("/publish/queue"), headers=_headers(), timeout=_TIMEOUT))
+def get_publish_queue(page: int = 1) -> dict:
+    return _handle(requests.get(_api_url("/publish/queue"), headers=_headers(),
+                                params={"page": page}, timeout=_TIMEOUT))
 
 
 def get_publish_rule() -> dict:

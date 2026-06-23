@@ -1,6 +1,7 @@
 """Log center view with filtering and export."""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QComboBox,
@@ -165,7 +166,7 @@ class LogView(QWidget):
             level = str(log.get("level", "INFO"))
             level_item = QTableWidgetItem(level)
             level_map = {"INFO": SUCCESS, "WARN": WARNING, "ERROR": DANGER, "DEBUG": TEXT_SECONDARY}
-            level_item.setForeground(level_map.get(level.upper(), TEXT_SECONDARY))
+            level_item.setForeground(QColor(level_map.get(level.upper(), TEXT_SECONDARY)))
             self._table.setItem(i, 1, level_item)
 
             self._table.setItem(i, 2, QTableWidgetItem(str(log.get("module", log.get("source", "")))))

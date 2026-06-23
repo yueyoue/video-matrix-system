@@ -1,6 +1,7 @@
 """Dashboard view – overview stats, recent publishes, alerts."""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QScrollArea
@@ -111,10 +112,10 @@ class DashboardView(QWidget):
 
     def _on_data(self, data: dict):
         d = data.get("data", data)
-        self._card_gen.set_value(str(d.get("totalVideos", d.get("videoCount", 0))))
-        self._card_ok.set_value(str(d.get("publishSuccess", d.get("successCount", 0))))
-        self._card_fail.set_value(str(d.get("publishFailed", d.get("failCount", 0))))
-        self._card_acc.set_value(str(d.get("accountCount", d.get("totalAccounts", 0))))
+        self._card_gen.set_value(str(d.get("today_videos", d.get("totalVideos", d.get("videoCount", 0)))))
+        self._card_ok.set_value(str(d.get("today_publish_success", d.get("publishSuccess", d.get("successCount", 0)))))
+        self._card_fail.set_value(str(d.get("today_publish_failed", d.get("publishFailed", d.get("failCount", 0)))))
+        self._card_acc.set_value(str(d.get("total_users", d.get("accountCount", d.get("totalAccounts", 0)))))
 
         # recent records
         records = d.get("recentPublish", d.get("recent", []))
@@ -127,9 +128,9 @@ class DashboardView(QWidget):
             status = str(r.get("status", ""))
             item = QTableWidgetItem(status)
             if "成功" in status or "success" in status.lower():
-                item.setForeground(SUCCESS)
+                item.setForeground(QColor(SUCCESS))
             elif "失败" in status or "fail" in status.lower():
-                item.setForeground(DANGER)
+                item.setForeground(QColor(DANGER))
             self._recent_table.setItem(i, 4, item)
 
         # alerts

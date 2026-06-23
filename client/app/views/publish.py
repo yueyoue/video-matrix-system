@@ -1,6 +1,7 @@
 """Publish scheduling view with rules and queue."""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QCheckBox,
@@ -239,11 +240,11 @@ class PublishView(QWidget):
             status = str(item.get("status", ""))
             status_item = QTableWidgetItem(status)
             if "待" in status or "pending" in status.lower():
-                status_item.setForeground(WARNING)
+                status_item.setForeground(QColor(WARNING))
             elif "成功" in status or "success" in status.lower():
-                status_item.setForeground(SUCCESS)
+                status_item.setForeground(QColor(SUCCESS))
             elif "失败" in status or "fail" in status.lower():
-                status_item.setForeground(DANGER)
+                status_item.setForeground(QColor(DANGER))
             self._queue_table.setItem(i, 4, status_item)
 
             self._queue_table.setItem(i, 5, QTableWidgetItem(str(item.get("priority", "-"))))

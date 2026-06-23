@@ -1,6 +1,7 @@
 """Data analysis view with filters, summary cards, and detailed tables."""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QComboBox,
@@ -249,7 +250,7 @@ class AnalysisView(QWidget):
         total_row = ["合计"] + [str(t) for t in totals]
         for j, v in enumerate(total_row):
             item = QTableWidgetItem(v)
-            item.setForeground(PRIMARY)
+            item.setForeground(QColor(PRIMARY))
             self._platform_table.setItem(len(platforms), j, item)
 
         # video table

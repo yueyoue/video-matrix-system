@@ -31,18 +31,49 @@ def get_ffmpeg() -> str:
     return _ffmpeg
 
 
+def _find_ffprobe() -> str:
+    """Find ffprobe binary path."""
+    # Try ffprobe in PATH first
+    for p in ['ffprobe', 'ffprobe.exe']:
+        try:
+            subprocess.run([p, '-version'], capture_output=True, timeout=5)
+            return p
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    # Try replacing ffmpeg with ffprobe in the found ffmpeg path
+    ffmpeg_path = get_ffmpeg()
+    ffprobe_path = ffmpeg_path.replace('ffmpeg', 'ffprobe')
+    if ffprobe_path != ffmpeg_path:
+        try:
+            subprocess.run([ffprobe_path, '-version'], capture_output=True, timeout=5)
+            return ffprobe_path
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    # Try local directory
+    local = Path(__file__).parent.parent / 'ffmpeg' / 'ffprobe.exe'
+    if local.exists():
+        return str(local)
+    return 'ffprobe'  # Hope it's in PATH
+
+
 def get_duration(file_path: str) -> float:
     """Get video duration in seconds."""
-    ffprobe = get_ffmpeg().replace('ffmpeg', 'ffprobe')
+    ffprobe = _find_ffprobe()
     try:
         result = subprocess.run(
             [ffprobe, '-v', 'quiet', '-print_format', 'json', '-show_format', file_path],
             capture_output=True, text=True, timeout=30
         )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffprobe 返回错误: {result.stderr[:200]}")
         info = json.loads(result.stdout)
         return float(info['format']['duration'])
-    except Exception:
-        return 0
+    except FileNotFoundError:
+        raise RuntimeError(f"找不到 ffprobe 程序，请确保已安装 FFmpeg 并添加到 PATH")
+    except (json.JSONDecodeError, KeyError) as e:
+        raise RuntimeError(f"解析视频信息失败: {e}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ffprobe 超时，视频文件可能过大或损坏")
 
 
 def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = None) -> list:
