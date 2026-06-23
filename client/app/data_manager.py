@@ -16,10 +16,11 @@ BASE_DIR = Path.home() / '.video-matrix'
 LIBRARY_DIR = BASE_DIR / 'library'
 BASKETS_DIR = BASE_DIR / 'baskets'
 MIXED_DIR = BASE_DIR / 'mixed'
+PUBLISH_DIR = BASE_DIR / 'pending_publish'
 DB_FILE = BASE_DIR / 'db.json'
 
 # 确保目录存在
-for d in [LIBRARY_DIR, BASKETS_DIR, MIXED_DIR]:
+for d in [LIBRARY_DIR, BASKETS_DIR, MIXED_DIR, PUBLISH_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -521,3 +522,95 @@ def clear_basket(basket_id: str):
             b["status"] = "empty"
             break
     _save_db(db)
+
+
+# ══════════════════════════════════════════════════════════════
+# 待发布库
+# ══════════════════════════════════════════════════════════════
+
+def add_pending_video(name: str, file_path: str, source: str = "mixed", task_id: str = "", clip_ids: list = None) -> dict:
+    """添加视频到待发布库"""
+    db = _load_db()
+    vid_id = _gen_id()
+    ext = Path(file_path).suffix
+    save_name = f"{vid_id}{ext}"
+    save_path = PUBLISH_DIR / save_name
+
+    shutil.copy2(file_path, save_path)
+
+    video = {
+        "id": vid_id,
+        "name": name,
+        "file_name": save_name,
+        "path": str(save_path),
+        "duration": 0,
+        "size": os.path.getsize(file_path),
+        "added_at": _now(),
+        "source": source,
+        "task_id": task_id,
+        "clip_ids": clip_ids or [],
+        "publish_status": "pending"  # pending -> scheduled -> published
+    }
+    db.setdefault("pending_videos", []).append(video)
+    _save_db(db)
+    return video
+
+
+def get_pending_videos() -> list:
+    """获取待发布库列表"""
+    db = _load_db()
+    return db.get("pending_videos", [])
+
+
+def get_pending_video(vid_id: str) -> dict:
+    """获取单个待发布视频"""
+    db = _load_db()
+    for v in db.get("pending_videos", []):
+        if v["id"] == vid_id:
+            return v
+    return None
+
+
+def delete_pending_video(vid_id: str) -> bool:
+    """从待发布库删除视频"""
+    db = _load_db()
+    video = None
+    for v in db.get("pending_videos", []):
+        if v["id"] == vid_id:
+            video = v
+            break
+    if not video:
+        return False
+    if os.path.exists(video["path"]):
+        os.remove(video["path"])
+    db["pending_videos"] = [v for v in db["pending_videos"] if v["id"] != vid_id]
+    _save_db(db)
+    return True
+
+
+def clear_all_videos():
+    """清空视频库"""
+    db = _load_db()
+    for v in db.get("videos", []):
+        if os.path.exists(v.get("path", "")):
+            try:
+                os.remove(v["path"])
+            except Exception:
+                pass
+    db["videos"] = []
+    _save_db(db)
+
+
+def is_mixed_exported(task_id: str) -> bool:
+    """检查混剪任务是否已导出到待发布库"""
+    db = _load_db()
+    for v in db.get("pending_videos", []):
+        if v.get("task_id") == task_id:
+            return True
+    return False
+
+
+def get_mixed_exported_count(task_id: str) -> int:
+    """获取混剪任务已导出的视频数量"""
+    db = _load_db()
+    return sum(1 for v in db.get("pending_videos", []) if v.get("task_id") == task_id)

@@ -2,6 +2,7 @@ name: Build & Release
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -12,6 +13,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,5 +96,7 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.build.outputs.tag }}
           files: VideoMatrix.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

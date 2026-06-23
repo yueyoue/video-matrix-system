@@ -32,6 +32,72 @@ class _LoginWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _EnvCheckWorker(QThread):
+    """Background thread for real environment check + ffmpeg auto-install."""
+    progress = pyqtSignal(str, int)  # message, percent
+    finished_ok = pyqtSignal(bool)   # all_ok
+
+    def run(self):
+        import shutil, subprocess
+        all_ok = True
+
+        # Step 1: FFmpeg 检测
+        self.progress.emit("🔍 正在检测 FFmpeg...", 10)
+        from .. import ffmpeg as ff
+        ff_available = ff.is_ffmpeg_available()
+        if ff_available:
+            self.progress.emit("✅ FFmpeg 已安装", 30)
+        else:
+            self.progress.emit("⚠️ 未检测到 FFmpeg，正在自动下载...", 15)
+            def _dl_cb(percent, msg):
+                # Map download 0-100 to our 15-70 range
+                mapped = 15 + int(percent * 55 / 100)
+                self.progress.emit(msg, mapped)
+            ok = ff.download_ffmpeg(progress_callback=_dl_cb)
+            if ok:
+                # Re-check
+                ff._ffmpeg_path = None
+                ff._ffprobe_path = None
+                if ff.is_ffmpeg_available():
+                    self.progress.emit("✅ FFmpeg 安装成功!", 70)
+                else:
+                    self.progress.emit("❌ FFmpeg 安装后仍无法使用", 70)
+                    all_ok = False
+            else:
+                self.progress.emit("❌ FFmpeg 自动下载失败，请手动安装", 70)
+                all_ok = False
+
+        # Step 2: Chromium 检测
+        self.progress.emit("🔍 正在检测 Chromium...", 75)
+        import shutil as _shutil
+        chrome_found = _shutil.which('chromium') or _shutil.which('chrome') or _shutil.which('google-chrome')
+        if chrome_found:
+            self.progress.emit("✅ Chromium 已安装", 82)
+        else:
+            self.progress.emit("⚠️ 未检测到 Chromium（部分功能可能受限）", 82)
+
+        # Step 3: 运行库检测
+        self.progress.emit("🔍 正在检测运行库...", 86)
+        try:
+            import PyQt6
+            self.progress.emit("✅ PyQt6 运行库正常", 90)
+        except ImportError:
+            self.progress.emit("❌ 缺少 PyQt6 运行库", 90)
+            all_ok = False
+
+        # Step 4: 网络连接检测
+        self.progress.emit("🔍 正在检测网络连接...", 93)
+        try:
+            import urllib.request
+            urllib.request.urlopen("https://www.baidu.com", timeout=5)
+            self.progress.emit("✅ 网络连接正常", 97)
+        except Exception:
+            self.progress.emit("⚠️ 网络连接异常", 97)
+
+        self.progress.emit("环境自检完成 ✅" if all_ok else "环境自检完成（部分异常）", 100)
+        self.finished_ok.emit(all_ok)
+
+
 class LoginView(QWidget):
     """Login page with credentials form and environment check animation."""
 
@@ -49,7 +115,7 @@ class LoginView(QWidget):
 
         # card
         card = QFrame()
-        card.setFixedSize(420, 600)
+        card.setFixedSize(420, 650)
         card.setStyleSheet(f"""
             QFrame {{
                 background: white;
@@ -165,31 +231,23 @@ class LoginView(QWidget):
 
         outer.addWidget(card)
 
-        # start environment check animation
+        # start real environment check
         QTimer.singleShot(500, self._run_env_check)
 
-    # ── environment check animation ────────────────────────────
+    # ── environment check (real) ───────────────────────────────
     def _run_env_check(self):
-        self._env_steps = [
-            ("FFmpeg 检测...", 20),
-            ("Chromium 检测...", 45),
-            ("运行库检测...", 70),
-            ("网络连接检测...", 90),
-            ("环境自检完成 ✓", 100),
-        ]
-        self._env_idx = 0
-        self._env_timer = QTimer(self)
-        self._env_timer.timeout.connect(self._env_tick)
-        self._env_timer.start(600)
+        self._env_worker = _EnvCheckWorker()
+        self._env_worker.progress.connect(self._on_env_progress)
+        self._env_worker.finished_ok.connect(self._on_env_done)
+        self._env_worker.start()
 
-    def _env_tick(self):
-        if self._env_idx >= len(self._env_steps):
-            self._env_timer.stop()
-            return
-        text, val = self._env_steps[self._env_idx]
-        self._env_label.setText(text)
+    def _on_env_progress(self, msg: str, val: int):
+        self._env_label.setText(msg)
         self._env_progress.setValue(val)
-        self._env_idx += 1
+
+    def _on_env_done(self, all_ok: bool):
+        if not all_ok:
+            self._env_label.setText(self._env_label.text() + " （可尝试登录后在设置中修复）")
 
     # ── login logic ────────────────────────────────────────────
     def _on_login(self):
