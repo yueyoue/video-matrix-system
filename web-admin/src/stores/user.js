@@ -4,14 +4,20 @@ import { login as loginApi, getUserInfo } from '../api/auth'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('token') || '')
-  const user = ref(JSON.parse(localStorage.getItem('user') || 'null'))
+  const user = ref((() => {
+  try {
+    const v = localStorage.getItem('user')
+    return v && v !== 'undefined' ? JSON.parse(v) : null
+  } catch { return null }
+})())
 
   async function login(username, password) {
     const res = await loginApi({ username, password })
     token.value = res.data.token
-    user.value = res.data.userInfo || res.data.user
+    const u = res.data.userInfo || res.data.user || { username }
+    user.value = u
     localStorage.setItem('token', res.data.token)
-    localStorage.setItem('user', JSON.stringify(user.value))
+    localStorage.setItem('user', JSON.stringify(u))
     return res
   }
 

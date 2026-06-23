@@ -60,6 +60,14 @@ function clearAndReload() {
   window.location.href = '/'
 }
 
+// Auto-fix corrupt localStorage on load
+try {
+  const u = localStorage.getItem('user')
+  if (u === 'undefined' || u === 'null') {
+    localStorage.removeItem('user')
+  }
+} catch { localStorage.removeItem('user') }
+
 const toast = reactive({ show: false, message: '', type: 'success', timer: null })
 
 const toastIcons = {
