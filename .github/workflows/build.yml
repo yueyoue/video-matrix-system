@@ -82,10 +82,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Clean cache
+        run: |
+          rm -rf client/build client/dist client/__pycache__
+          find client -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+          find client -name "*.pyc" -delete 2>/dev/null || true
+        shell: bash
       - name: Build exe
         run: |
           pip install pyinstaller PyQt6 requests
-          pyinstaller --noconfirm --onedir --windowed --name VideoMatrix --noconsole --exclude-module PyQt6.QtWebEngine --exclude-module PyQt6.Qt3D --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtQuick --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtRemoteObjects --exclude-module PyQt6.QtSensors --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtSvg --exclude-module PyQt6.QtTest --exclude-module PyQt6.QtHelp --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtShaderTools --exclude-module PyQt6.QtSpatialAudio --exclude-module PyQt6.QtHttpServer --exclude-module PyQt6.QtPdf --exclude-module PyQt6.QtStateMachine --exclude-module PyQt6.QtUiTools main.py
+          pyinstaller --clean --noconfirm --onedir --windowed --name VideoMatrix --noconsole --exclude-module PyQt6.QtWebEngine --exclude-module PyQt6.Qt3D --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtQuick --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtRemoteObjects --exclude-module PyQt6.QtSensors --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtSvg --exclude-module PyQt6.QtTest --exclude-module PyQt6.QtHelp --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtShaderTools --exclude-module PyQt6.QtSpatialAudio --exclude-module PyQt6.QtHttpServer --exclude-module PyQt6.QtPdf --exclude-module PyQt6.QtStateMachine --exclude-module PyQt6.QtUiTools main.py
         shell: cmd
         working-directory: client
       - name: Zip dist
