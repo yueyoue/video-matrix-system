@@ -884,6 +884,7 @@ class VideoView(QWidget):
         self._lib_table.setColumnCount(8)
         self._lib_table.setHorizontalHeaderLabels(["☑", "文件名", "时长", "大小", "来源", "路径", "时间", "操作"])
         self._lib_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._lib_table.horizontalHeader().setMinimumSectionSize(90)
         self._lib_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._lib_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self._lib_table.setColumnWidth(0, 35)
@@ -930,6 +931,7 @@ class VideoView(QWidget):
         self._cut_table.setColumnCount(7)
         self._cut_table.setHorizontalHeaderLabels(["☑", "组名", "视频数", "规则", "状态", "进度", "操作"])
         self._cut_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._cut_table.horizontalHeader().setMinimumSectionSize(120)
         self._cut_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._cut_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._cut_table.setColumnWidth(0, 35)
@@ -1072,6 +1074,7 @@ class VideoView(QWidget):
         self._ai_table.setColumnCount(7)
         self._ai_table.setHorizontalHeaderLabels(["☑", "名称", "类型", "模型", "提示词", "路径", "操作"])
         self._ai_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._ai_table.horizontalHeader().setMinimumSectionSize(90)
         self._ai_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._ai_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._ai_table.setColumnWidth(0, 35)
@@ -1202,6 +1205,7 @@ class VideoView(QWidget):
         self._mix_table.setColumnCount(7)
         self._mix_table.setHorizontalHeaderLabels(["☑", "篮子", "取几段", "组合数", "已完成", "状态", "操作"])
         self._mix_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._mix_table.horizontalHeader().setMinimumSectionSize(150)
         self._mix_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._mix_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._mix_table.setColumnWidth(0, 35)
@@ -1238,6 +1242,7 @@ class VideoView(QWidget):
         self._pub_table.setColumnCount(8)
         self._pub_table.setHorizontalHeaderLabels(["☑", "文件名", "大小", "来源", "路径", "发布时间", "状态", "操作"])
         self._pub_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._pub_table.horizontalHeader().setMinimumSectionSize(90)
         self._pub_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._pub_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self._pub_table.setColumnWidth(0, 35)
@@ -1287,7 +1292,7 @@ class VideoView(QWidget):
             elif g.get("status")=="error": si.setForeground(QColor(DANGER))
             self._cut_table.setItem(i, 4, si)
             self._cut_table.setItem(i, 5, QTableWidgetItem(f"{g.get('progress',0)}%"))
-            ow = QWidget(); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
+            ow = QWidget(); ow.setMinimumWidth(110); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             gid = g["id"]
             if g.get("status") == "pending":
                 ol.addWidget(_cell_btn("裁切", CELL_BTN_PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
@@ -1350,7 +1355,7 @@ class VideoView(QWidget):
             elif t.get("status")=="error": si.setForeground(QColor(DANGER))
             self._mix_table.setItem(i, 5, si)
             tid = t["id"]
-            ow = QWidget(); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
+            ow = QWidget(); ow.setMinimumWidth(140); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             if t.get("status") == "pending":
                 ol.addWidget(_cell_btn("混剪", CELL_BTN_PRIMARY, lambda _, tt=tid: self._mix_one(tt)))
             if t.get("status") == "done":
