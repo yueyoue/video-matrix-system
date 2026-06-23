@@ -22,11 +22,9 @@ from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, PRIMARY_HOVER,
     SUCCESS, DANGER, DANGER_HOVER, WARNING, BORDER_COLOR, WHITE,
     BTN_PRIMARY, BTN_PRIMARY_SM, BTN_DEFAULT, BTN_DANGER, BTN_DANGER_TEXT,
-    BTN_SUCCESS, BTN_TEXT, INPUT_STYLE, SPINBOX_STYLE, TABLE_STYLE,
-    CELL_BTN_DELETE, CELL_BTN_PRIMARY, CELL_BTN_SUCCESS, CELL_BTN_DEFAULT
+    BTN_SUCCESS, BTN_TEXT, INPUT_STYLE, SPINBOX_STYLE, TABLE_STYLE
 )
 from ..widgets.toast import Toast
-from ..widgets.btn import btn_delete, btn_primary, btn_success, btn_default, top_btn, cell_btn
 from .. import ffmpeg
 from .. import data_manager as dm
 from pathlib import Path
@@ -36,7 +34,6 @@ from pathlib import Path
 # 样式常量 - 表格行内操作按钮（单行CSS，避免解析问题）
 # ══════════════════════════════════════════════════════════════
 
-# 已迁移到 theme.py: CELL_BTN_DELETE, CELL_BTN_PRIMARY, CELL_BTN_SUCCESS, CELL_BTN_DEFAULT
 
 
 # ══════════════════════════════════════════════════════════════
@@ -758,7 +755,7 @@ class AudioComboDialog(QDialog):
             self._list.setItem(i, 1, QTableWidgetItem(c.get("text", "")))
             self._list.setItem(i, 2, QTableWidgetItem(os.path.basename(c.get("audio", "")) or "--"))
             del_btn = QPushButton("删除")
-            del_btn.setStyleSheet(CELL_BTN_DELETE)
+            del_btn.setStyleSheet(f"color: {DANGER}; border:none; font-size:12px;")
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             idx = i
             del_btn.clicked.connect(lambda _, ii=idx: (self.combos.pop(ii), self._refresh_list()))
@@ -772,12 +769,24 @@ class AudioComboDialog(QDialog):
 # 辅助函数
 # ══════════════════════════════════════════════════════════════
 
+def _btn(text, color, callback):
+    """快速创建操作按钮"""
+    btn = QPushButton(text)
+    btn.setStyleSheet(f"color: {color}; border: none; font-size: 12px; padding: 2px 6px;")
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.clicked.connect(callback)
+    return btn
+
+
 def _make_btn(text, style, callback):
     """顶部操作按钮"""
-    if '#F53F3F' in style: return top_btn(text, '#F53F3F', '#FFFFFF', '#F76965', callback)
-    elif '#00B42A' in style: return top_btn(text, '#00B42A', '#FFFFFF', '#23C343', callback)
-    elif 'white' in style and '#333' in style: return top_btn(text, '#FFFFFF', '#333333', '#E8F3FF', callback)
-    else: return top_btn(text, '#165DFF', '#FFFFFF', '#4080FF', callback)
+    btn = QPushButton(text)
+    btn.setStyleSheet(style)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setMinimumHeight(30)
+    btn.setMinimumWidth(50)
+    btn.clicked.connect(callback)
+    return btn
 
 
 def _open_folder(path: str):
@@ -798,14 +807,6 @@ def _folder_link_widget(path: str):
     label.setToolTip(f"点击打开: {folder}")
     label.mousePressEvent = lambda e: _open_folder(path)
     return label
-
-
-def _cell_btn(text, style, callback):
-    """表格操作按钮"""
-    if '#F53F3F' in style: return btn_delete(text, callback)
-    elif '#00B42A' in style: return btn_success(text, callback)
-    elif 'white' in style and '#333' in style: return btn_default(text, callback)
-    else: return btn_primary(text, callback)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1263,7 +1264,7 @@ class VideoView(QWidget):
             self._lib_table.setCellWidget(i, 5, _folder_link_widget(v.get("path", "")))
             self._lib_table.setItem(i, 6, QTableWidgetItem(v.get("added_at", "")))
             vid = v["id"]
-            self._lib_table.setCellWidget(i, 7, _cell_btn("删除", CELL_BTN_DELETE, lambda _, vv=vid: self._del_video(vv)))
+            self._lib_table.setCellWidget(i, 7, _btn("删除", DANGER, lambda _, vv=vid: self._del_video(vv)))
 
     def _refresh_cut(self):
         groups = dm.get_cut_groups()
@@ -1286,8 +1287,8 @@ class VideoView(QWidget):
             ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             gid = g["id"]
             if g.get("status") == "pending":
-                ol.addWidget(_cell_btn("裁切", CELL_BTN_PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
-            ol.addWidget(_cell_btn("删除", CELL_BTN_DELETE, lambda _, gg=gid: self._del_cut(gg)))
+                ol.addWidget(_btn("裁切", PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
+            ol.addWidget(_btn("删除", DANGER, lambda _, gg=gid: self._del_cut(gg)))
             ol.addStretch()
             self._cut_table.setCellWidget(i, 6, ow)
 
@@ -1327,7 +1328,7 @@ class VideoView(QWidget):
             self._ai_table.setItem(i, 4, QTableWidgetItem(a.get("prompt", "")[:50]))
             self._ai_table.setCellWidget(i, 5, _folder_link_widget(a.get("path", "")))
             aid = a["id"]
-            self._ai_table.setCellWidget(i, 6, _cell_btn("删除", CELL_BTN_DELETE, lambda _, aa=aid: self._del_ai_asset(aa)))
+            self._ai_table.setCellWidget(i, 6, _btn("删除", DANGER, lambda _, aa=aid: self._del_ai_asset(aa)))
 
     def _refresh_mix(self):
         tasks = dm.get_mix_tasks()
@@ -1350,7 +1351,7 @@ class VideoView(QWidget):
             ow.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             if t.get("status") == "pending":
-                ol.addWidget(_cell_btn("混剪", CELL_BTN_PRIMARY, lambda _, tt=tid: self._mix_one(tt)))
+                ol.addWidget(_btn("混剪", PRIMARY, lambda _, tt=tid: self._mix_one(tt)))
             if t.get("status") == "done":
                 exported_count = dm.get_mixed_exported_count(tid)
                 if exported_count > 0:
@@ -1358,8 +1359,8 @@ class VideoView(QWidget):
                     already_label.setStyleSheet(f"color: {SUCCESS}; font-size: 12px;")
                     ol.addWidget(already_label)
                 else:
-                    ol.addWidget(_cell_btn("导出", CELL_BTN_SUCCESS, lambda _, tt=tid: self._export_mix(tt)))
-            ol.addWidget(_cell_btn("删除", CELL_BTN_DELETE, lambda _, tt=tid: self._del_mix(tt)))
+                    ol.addWidget(_btn("导出", SUCCESS, lambda _, tt=tid: self._export_mix(tt)))
+            ol.addWidget(_btn("删除", DANGER, lambda _, tt=tid: self._del_mix(tt)))
             ol.addStretch()
             self._mix_table.setCellWidget(i, 6, ow)
 
@@ -1382,7 +1383,7 @@ class VideoView(QWidget):
             else: si.setForeground(QColor(PRIMARY))
             self._pub_table.setItem(i, 6, si)
             vid = v["id"]
-            self._pub_table.setCellWidget(i, 7, _cell_btn("删除", CELL_BTN_DELETE, lambda _, vv=vid: self._del_pending(vv)))
+            self._pub_table.setCellWidget(i, 7, _btn("删除", DANGER, lambda _, vv=vid: self._del_pending(vv)))
 
     # ══════════════════════════════════════════════════════════
     # AI制作操作
