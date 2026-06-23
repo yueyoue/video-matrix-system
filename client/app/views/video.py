@@ -321,7 +321,7 @@ class VideoView(QWidget):
         # 操作栏
         bar = QHBoxLayout()
         bar.addWidget(_btn("▶️ 裁切选中", PRIMARY, self._cut_selected))
-        bar.addWidget(_btn("▶️ 裁切全部", DEFAULT, self._cut_all))
+        bar.addWidget(_btn("▶️ 裁切全部", BTN_DEFAULT, self._cut_all))
         bar.addWidget(_btn("🗑️ 删除选中", DANGER, self._cut_delete_selected))
         bar.addWidget(_btn("🗑️ 清空全部", DANGER, self._cut_clear_all))
         bar.addStretch()
