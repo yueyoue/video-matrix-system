@@ -114,11 +114,11 @@ BTN_DANGER_TEXT = f"""
 """
 
 # ── Cell Action Buttons (for table widgets) ───────────────────
-# 使用单行CSS，避免多行字符串在 PyQt6 setStyleSheet 中的解析问题
-CELL_BTN_DELETE = f"QPushButton {{background:{DANGER};color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;}} QPushButton:hover {{background:{DANGER_HOVER};}}"
-CELL_BTN_PRIMARY = f"QPushButton {{background:{PRIMARY};color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;}} QPushButton:hover {{background:{PRIMARY_HOVER};}}"
-CELL_BTN_SUCCESS = f"QPushButton {{background:{SUCCESS};color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;}} QPushButton:hover {{background:#23C343;}}"
-CELL_BTN_DEFAULT = f"QPushButton {{background:white;color:{TEXT_COLOR};border:1px solid {BORDER_COLOR};border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;}} QPushButton:hover {{border-color:{PRIMARY};color:{PRIMARY};}}"
+# 单行CSS格式，确保PyQt6正确解析
+CELL_BTN_DELETE = "QPushButton {background:#F53F3F;color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;} QPushButton:hover {background:#F76965;}"
+CELL_BTN_PRIMARY = "QPushButton {background:#165DFF;color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;} QPushButton:hover {background:#4080FF;}"
+CELL_BTN_SUCCESS = "QPushButton {background:#00B42A;color:white;border:none;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;} QPushButton:hover {background:#23C343;}"
+CELL_BTN_DEFAULT = "QPushButton {background:white;color:#333333;border:1px solid #E5E6EB;border-radius:4px;padding:4px 12px;font-size:12px;min-height:28px;min-width:50px;} QPushButton:hover {border-color:#165DFF;color:#165DFF;}"
 
 # ── Input Styles ───────────────────────────────────────────────
 INPUT_STYLE = f"""

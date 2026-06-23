@@ -803,14 +803,29 @@ def _folder_link_widget(path: str):
 
 
 def _cell_btn(text, style, callback):
-    """表格单元格内的操作按钮 - 确保样式正确应用"""
+    """表格单元格内的操作按钮 - 使用QPalette确保颜色不被全局样式覆盖"""
     btn = QPushButton(text)
-    btn.setStyleSheet(style)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedHeight(28)
     btn.setMinimumWidth(50)
     btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     btn.clicked.connect(callback)
+    # 用QPalette设置颜色，绕过全局QWidget样式覆盖
+    from PyQt6.QtGui import QPalette, QColor
+    palette = btn.palette()
+    # 从style字符串解析背景色和文字色
+    bg = "#165DFF"; fg = "white"; hover_bg = "#4080FF"
+    if "#F53F3F" in style: bg = "#F53F3F"; hover_bg = "#F76965"
+    elif "#00B42A" in style: bg = "#00B42A"; hover_bg = "#23C343"
+    elif "white" in style and "#333" in style: bg = "white"; fg = "#333333"; hover_bg = "#E8F3FF"
+    palette.setColor(QPalette.ColorRole.Button, QColor(bg))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(fg))
+    palette.setColor(QPalette.ColorRole.Window, QColor(bg))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(fg))
+    btn.setPalette(palette)
+    btn.setAutoFillBackground(True)
+    # 用样式表设置布局和hover
+    btn.setStyleSheet(style)
     return btn
 
 
