@@ -696,3 +696,24 @@ def clear_ai_assets():
                 pass
     db["ai_assets"] = []
     _save_db(db)
+
+
+# ══════════════════════════════════════════════════════════════
+# 自定义AI模型管理
+# ══════════════════════════════════════════════════════════════
+
+def get_custom_models() -> list:
+    """获取用户自定义的AI模型列表"""
+    cfg_path = BASE_DIR / 'custom_models.json'
+    if cfg_path.exists():
+        try:
+            return json.loads(cfg_path.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+    return []
+
+
+def save_custom_models(models: list):
+    """保存用户自定义的AI模型列表"""
+    cfg_path = BASE_DIR / 'custom_models.json'
+    cfg_path.write_text(json.dumps(models, ensure_ascii=False, indent=2), encoding='utf-8')

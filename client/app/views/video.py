@@ -151,9 +151,23 @@ class _MixWorker(QThread):
             ai_audios = []
             for item in dm.get_ai_assets():
                 if item.get("type") == "video" and os.path.exists(item.get("path", "")):
-                    ai_videos.append(item["path"])
+                    ai_videos.append(item)
                 elif item.get("type") == "audio" and os.path.exists(item.get("path", "")):
-                    ai_audios.append(item["path"])
+                    ai_audios.append(item)
+
+            # 确定指定的素材
+            video_asset_id = self.ai_insert.get("video_asset", "random")
+            audio_asset_id = self.ai_insert.get("audio_asset", "random")
+            specified_video = None
+            specified_audio = None
+            if video_asset_id != "random":
+                for a in ai_videos:
+                    if a["id"] == video_asset_id:
+                        specified_video = a["path"]; break
+            if audio_asset_id != "random":
+                for a in ai_audios:
+                    if a["id"] == audio_asset_id:
+                        specified_audio = a["path"]; break
 
             for idx, clip_ids in enumerate(combinations):
                 self.progress.emit(f"混剪 {idx+1}/{total}", int(idx/total*100))
@@ -171,9 +185,9 @@ class _MixWorker(QThread):
                 # 应用AI视频插入
                 final_paths = list(clip_paths)
                 ai_video_pos = self.ai_insert.get("video_position", "none")
-                if ai_video_pos != "none" and ai_videos:
-                    chosen_ai = random.choice(ai_videos)
-                    if ai_video_pos == "head":
+                if ai_video_pos != "none":
+                    chosen_ai = specified_video or (random.choice(ai_videos)["path"] if ai_videos else None)
+                    if chosen_ai:
                         final_paths.insert(0, chosen_ai)
                     elif ai_video_pos == "tail":
                         final_paths.append(chosen_ai)
@@ -189,13 +203,14 @@ class _MixWorker(QThread):
 
                 # 应用AI音频插入
                 ai_audio_pos = self.ai_insert.get("audio_position", "none")
-                if ai_audio_pos != "none" and ai_audios:
-                    chosen_audio = random.choice(ai_audios)
-                    try:
-                        ffmpeg.insert_audio(out_path, chosen_audio, ai_audio_pos,
-                                           self.ai_insert.get("audio_fixed_time", 5))
-                    except Exception:
-                        pass
+                if ai_audio_pos != "none":
+                    chosen_audio = specified_audio or (random.choice(ai_audios)["path"] if ai_audios else None)
+                    if chosen_audio:
+                        try:
+                            ffmpeg.insert_audio(out_path, chosen_audio, ai_audio_pos,
+                                               self.ai_insert.get("audio_fixed_time", 5))
+                        except Exception:
+                            pass
 
                 if subtitle_text:
                     try: ffmpeg.add_subtitle(out_path, subtitle_text)
@@ -427,8 +442,9 @@ class AIModelConfigDialog(QDialog):
         form.setSpacing(10)
 
         self._provider_combo = QComboBox()
-        self._provider_combo.addItems(["zhipu", "qwen", "deepseek", "moonshot", "openai", "siliconflow"])
+        self._provider_combo.addItems(["zhipu", "qwen", "deepseek", "moonshot", "openai", "siliconflow", "custom"])
         self._provider_combo.setStyleSheet(INPUT_STYLE)
+        self._provider_combo.currentTextChanged.connect(self._on_provider_changed)
         form.addRow("提供商:", self._provider_combo)
 
         self._api_url_input = QLineEdit()
@@ -451,6 +467,46 @@ class AIModelConfigDialog(QDialog):
         form.addRow("模型名称:", self._model_input)
 
         layout.addWidget(config_group)
+
+        # 自定义模型添加
+        custom_frame = QFrame()
+        custom_frame.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
+        cf_layout = QVBoxLayout(custom_frame)
+        cf_layout.setSpacing(8)
+        cf_layout.addWidget(QLabel("➕ 自定义添加模型（保存后可在预设中快速选择）"))
+        cf_row = QHBoxLayout()
+        cf_row.addWidget(QLabel("名称:"))
+        self._custom_name = QLineEdit()
+        self._custom_name.setPlaceholderText("如: 我的GPT-4")
+        self._custom_name.setStyleSheet(INPUT_STYLE)
+        self._custom_name.setFixedWidth(140)
+        cf_row.addWidget(self._custom_name)
+        cf_row.addWidget(QLabel("Provider:"))
+        self._custom_provider = QLineEdit()
+        self._custom_provider.setPlaceholderText("如: openai")
+        self._custom_provider.setStyleSheet(INPUT_STYLE)
+        self._custom_provider.setFixedWidth(100)
+        cf_row.addWidget(self._custom_provider)
+        cf_row.addWidget(QLabel("模型名:"))
+        self._custom_model = QLineEdit()
+        self._custom_model.setPlaceholderText("如: gpt-4o")
+        self._custom_model.setStyleSheet(INPUT_STYLE)
+        self._custom_model.setFixedWidth(120)
+        cf_row.addWidget(self._custom_model)
+        add_custom_btn = QPushButton("添加")
+        add_custom_btn.setStyleSheet(BTN_PRIMARY_SM)
+        add_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_custom_btn.clicked.connect(self._add_custom_model)
+        cf_row.addWidget(add_custom_btn)
+        cf_layout.addLayout(cf_row)
+
+        # 已保存的自定义模型列表
+        self._custom_model_list = QLabel("")
+        self._custom_model_list.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        self._custom_model_list.setWordWrap(True)
+        cf_layout.addWidget(self._custom_model_list)
+        layout.addWidget(custom_frame)
+        self._refresh_custom_models()
 
         # 生成参数
         param_group = QGroupBox("生成参数")
@@ -509,6 +565,43 @@ class AIModelConfigDialog(QDialog):
         if idx >= 0: self._provider_combo.setCurrentIndex(idx)
         self._api_url_input.setText(model["api_url"])
         self._model_input.setText(model["model"])
+
+    def _on_provider_changed(self, text):
+        """提供商切换时的处理"""
+        if text == "custom":
+            self._api_url_input.setPlaceholderText("输入完整的API接口地址")
+            self._model_input.setPlaceholderText("输入模型名称")
+        else:
+            self._api_url_input.setPlaceholderText("API接口地址")
+            self._model_input.setPlaceholderText("模型名称，如 glm-4-flash")
+
+    def _add_custom_model(self):
+        """添加自定义模型到预设列表"""
+        name = self._custom_name.text().strip()
+        provider = self._custom_provider.text().strip()
+        model = self._custom_model.text().strip()
+        if not name or not provider or not model:
+            from ..widgets.toast import Toast
+            Toast.warning(self, "请填写完整信息")
+            return
+        custom_models = dm.get_custom_models()
+        custom_models.append({"name": name, "provider": provider, "model": model, "desc": "用户自定义"})
+        dm.save_custom_models(custom_models)
+        self._custom_name.clear()
+        self._custom_provider.clear()
+        self._custom_model.clear()
+        self._refresh_custom_models()
+        from ..widgets.toast import Toast
+        Toast.success(self, f"已添加自定义模型: {name}")
+
+    def _refresh_custom_models(self):
+        """刷新自定义模型显示"""
+        custom_models = dm.get_custom_models()
+        if custom_models:
+            texts = [f"• {m['name']} ({m['provider']}/{m['model']})" for m in custom_models]
+            self._custom_model_list.setText("已添加: " + "  ".join(texts))
+        else:
+            self._custom_model_list.setText("暂无自定义模型")
 
     def _load_config(self):
         if not self._config: return
@@ -1036,6 +1129,16 @@ class VideoView(QWidget):
         self._ai_video_time.setFixedWidth(80)
         self._ai_video_time.setEnabled(False)
         vid_row.addWidget(self._ai_video_time)
+        # 选择素材按钮
+        self._ai_video_sel_btn = QPushButton("选择素材")
+        self._ai_video_sel_btn.setStyleSheet(BTN_DEFAULT)
+        self._ai_video_sel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ai_video_sel_btn.setFixedWidth(90)
+        self._ai_video_sel_btn.clicked.connect(lambda: self._pick_ai_asset("video"))
+        vid_row.addWidget(self._ai_video_sel_btn)
+        self._ai_video_sel_label = QLabel("随机选择")
+        self._ai_video_sel_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        vid_row.addWidget(self._ai_video_sel_label)
         vid_row.addStretch()
         ail.addLayout(vid_row)
 
@@ -1056,6 +1159,16 @@ class VideoView(QWidget):
         self._ai_audio_time.setFixedWidth(80)
         self._ai_audio_time.setEnabled(False)
         aud_row.addWidget(self._ai_audio_time)
+        # 选择素材按钮
+        self._ai_audio_sel_btn = QPushButton("选择素材")
+        self._ai_audio_sel_btn.setStyleSheet(BTN_DEFAULT)
+        self._ai_audio_sel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ai_audio_sel_btn.setFixedWidth(90)
+        self._ai_audio_sel_btn.clicked.connect(lambda: self._pick_ai_asset("audio"))
+        aud_row.addWidget(self._ai_audio_sel_btn)
+        self._ai_audio_sel_label = QLabel("随机选择")
+        self._ai_audio_sel_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        aud_row.addWidget(self._ai_audio_sel_label)
         aud_row.addStretch()
         ail.addLayout(aud_row)
 
@@ -1357,6 +1470,87 @@ class VideoView(QWidget):
         pos_map = {0: "none", 1: "head", 2: "tail", 3: "random", 4: "fixed"}
         self._ai_insert["audio_position"] = pos_map.get(idx, "none")
         self._ai_audio_time.setEnabled(idx == 4)
+
+    def _pick_ai_asset(self, asset_type):
+        """选择AI素材 - 弹出选择对话框"""
+        assets = [a for a in dm.get_ai_assets() if a.get("type") == asset_type]
+        if not assets:
+            Toast.warning(self, f"暂无AI{'视频' if asset_type == 'video' else '音频'}素材，请先在AI制作中生成")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"选择AI{'视频' if asset_type == 'video' else '音频'}素材")
+        dlg.setMinimumWidth(500)
+        dlg.setMinimumHeight(400)
+        dl = QVBoxLayout(dlg)
+
+        # 随机选择选项
+        random_cb = QCheckBox("🎲 随机选择（每次混剪随机挑选一个素材）")
+        random_cb.setChecked(True)
+        random_cb.setStyleSheet(f"font-size: 13px; padding: 8px;")
+        dl.addWidget(random_cb)
+
+        dl.addWidget(QLabel("或手动指定素材:"))
+
+        # 素材列表
+        list_widget = QTableWidget()
+        list_widget.setStyleSheet(TABLE_STYLE)
+        list_widget.setColumnCount(4)
+        list_widget.setHorizontalHeaderLabels(["选择", "名称", "提示词", "路径"])
+        list_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        list_widget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        list_widget.setColumnWidth(0, 50)
+        list_widget.verticalHeader().setVisible(False)
+        list_widget.setRowCount(len(assets))
+        for i, a in enumerate(assets):
+            rb = QCheckBox()
+            rb.setEnabled(False)
+            list_widget.setCellWidget(i, 0, rb)
+            list_widget.setItem(i, 1, QTableWidgetItem(a.get("name", "")[:30]))
+            list_widget.setItem(i, 2, QTableWidgetItem(a.get("prompt", "")[:40]))
+            list_widget.setItem(i, 3, QTableWidgetItem(os.path.basename(a.get("path", ""))))
+        dl.addWidget(list_widget, 1)
+
+        def _on_random_toggled(checked):
+            for i in range(list_widget.rowCount()):
+                cb = list_widget.cellWidget(i, 0)
+                if cb: cb.setEnabled(not checked); cb.setChecked(False)
+        random_cb.toggled.connect(_on_random_toggled)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        dl.addWidget(btn_box)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            if asset_type == "video":
+                if random_cb.isChecked():
+                    self._ai_insert["video_asset"] = "random"
+                    self._ai_video_sel_label.setText("🎲 随机选择")
+                else:
+                    for i in range(list_widget.rowCount()):
+                        cb = list_widget.cellWidget(i, 0)
+                        if cb and cb.isChecked():
+                            self._ai_insert["video_asset"] = assets[i]["id"]
+                            self._ai_video_sel_label.setText(f"📌 {assets[i].get('name','')[:15]}")
+                            break
+                    else:
+                        self._ai_insert["video_asset"] = "random"
+                        self._ai_video_sel_label.setText("🎲 随机选择")
+            else:
+                if random_cb.isChecked():
+                    self._ai_insert["audio_asset"] = "random"
+                    self._ai_audio_sel_label.setText("🎲 随机选择")
+                else:
+                    for i in range(list_widget.rowCount()):
+                        cb = list_widget.cellWidget(i, 0)
+                        if cb and cb.isChecked():
+                            self._ai_insert["audio_asset"] = assets[i]["id"]
+                            self._ai_audio_sel_label.setText(f"📌 {assets[i].get('name','')[:15]}")
+                            break
+                    else:
+                        self._ai_insert["audio_asset"] = "random"
+                        self._ai_audio_sel_label.setText("🎲 随机选择")
 
     # ══════════════════════════════════════════════════════════
     # 视频库操作
