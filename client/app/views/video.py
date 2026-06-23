@@ -26,7 +26,7 @@ from ..styles.theme import (
     CELL_BTN_DELETE, CELL_BTN_PRIMARY, CELL_BTN_SUCCESS, CELL_BTN_DEFAULT
 )
 from ..widgets.toast import Toast
-from ..widgets.color_button import make_delete_btn, make_primary_btn, make_success_btn, make_default_btn
+from ..widgets.btn import btn_delete, btn_primary, btn_success, btn_default, top_btn, cell_btn
 from .. import ffmpeg
 from .. import data_manager as dm
 from pathlib import Path
@@ -773,18 +773,11 @@ class AudioComboDialog(QDialog):
 # ══════════════════════════════════════════════════════════════
 
 def _make_btn(text, style, callback):
-    """创建操作按钮 - 使用自绘ColorButton"""
-    if '#F53F3F' in style:
-        btn = make_delete_btn(text, callback)
-    elif '#00B42A' in style:
-        btn = make_success_btn(text, callback)
-    elif 'white' in style and '#333' in style:
-        btn = make_default_btn(text, callback)
-    else:
-        btn = make_primary_btn(text, callback)
-    btn.setFixedHeight(32)
-    btn.setMinimumWidth(60)
-    return btn
+    """顶部操作按钮"""
+    if '#F53F3F' in style: return top_btn(text, '#F53F3F', '#FFFFFF', '#F76965', callback)
+    elif '#00B42A' in style: return top_btn(text, '#00B42A', '#FFFFFF', '#23C343', callback)
+    elif 'white' in style and '#333' in style: return top_btn(text, '#FFFFFF', '#333333', '#E8F3FF', callback)
+    else: return top_btn(text, '#165DFF', '#FFFFFF', '#4080FF', callback)
 
 
 def _open_folder(path: str):
@@ -808,15 +801,11 @@ def _folder_link_widget(path: str):
 
 
 def _cell_btn(text, style, callback):
-    """表格单元格操作按钮 - 使用自绘ColorButton，完全绕过Qt样式表"""
-    if '#F53F3F' in style:
-        return make_delete_btn(text, callback)
-    elif '#00B42A' in style:
-        return make_success_btn(text, callback)
-    elif 'white' in style and '#333' in style:
-        return make_default_btn(text, callback)
-    else:
-        return make_primary_btn(text, callback)
+    """表格操作按钮"""
+    if '#F53F3F' in style: return btn_delete(text, callback)
+    elif '#00B42A' in style: return btn_success(text, callback)
+    elif 'white' in style and '#333' in style: return btn_default(text, callback)
+    else: return btn_primary(text, callback)
 
 
 # ══════════════════════════════════════════════════════════════
