@@ -756,6 +756,7 @@ class AudioComboDialog(QDialog):
             self._list.setItem(i, 2, QTableWidgetItem(os.path.basename(c.get("audio", "")) or "--"))
             del_btn = QPushButton("删除")
             del_btn.setStyleSheet(f"color: {DANGER}; border:none; font-size:12px;")
+            del_btn.setFixedHeight(26)
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             idx = i
             del_btn.clicked.connect(lambda _, ii=idx: (self.combos.pop(ii), self._refresh_list()))
@@ -774,6 +775,7 @@ def _btn(text, color, callback):
     btn = QPushButton(text)
     btn.setStyleSheet(f"color: {color}; border: none; font-size: 12px; padding: 2px 6px;")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setFixedHeight(26)
     btn.clicked.connect(callback)
     return btn
 
@@ -783,7 +785,7 @@ def _make_btn(text, style, callback):
     btn = QPushButton(text)
     btn.setStyleSheet(style)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setMinimumHeight(30)
+    btn.setFixedHeight(32)
     btn.setMinimumWidth(50)
     btn.clicked.connect(callback)
     return btn
