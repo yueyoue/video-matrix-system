@@ -5,6 +5,7 @@
 import os
 import itertools
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton,
     QLineEdit, QSpinBox, QComboBox, QFileDialog, QGridLayout, QScrollArea,
@@ -455,11 +456,11 @@ class VideoView(QWidget):
             status_text = status_map.get(g.get("status", ""), g.get("status", ""))
             status_item = QTableWidgetItem(status_text)
             if g.get("status") == "done":
-                status_item.setForeground(SUCCESS)
+                status_item.setForeground(QColor(SUCCESS))
             elif g.get("status") == "cutting":
-                status_item.setForeground(WARNING)
+                status_item.setForeground(QColor(WARNING))
             elif g.get("status") == "error":
-                status_item.setForeground(DANGER)
+                status_item.setForeground(QColor(DANGER))
             self._cut_table.setItem(i, 3, status_item)
 
             progress = g.get("progress", 0)
@@ -537,9 +538,9 @@ class VideoView(QWidget):
             status_text = status_map.get(t.get("status", ""), t.get("status", ""))
             status_item = QTableWidgetItem(status_text)
             if t.get("status") == "done":
-                status_item.setForeground(SUCCESS)
+                status_item.setForeground(QColor(SUCCESS))
             elif t.get("status") == "running":
-                status_item.setForeground(WARNING)
+                status_item.setForeground(QColor(WARNING))
             self._mix_table.setItem(i, 4, status_item)
 
             # 操作
