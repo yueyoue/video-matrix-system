@@ -231,20 +231,39 @@ def get_duration(file_path: str) -> float:
     _debug_log(f"[FFmpeg] 使用 ffprobe: {ffprobe}")
 
     try:
-        # On Windows, use shell=True for better compatibility
+        # On Windows, use shell=True for better compatibility with Chinese paths
         use_shell = os.name == 'nt'
+        # Quote the file path to handle spaces and Chinese characters
+        cmd = [ffprobe, '-v', 'quiet', '-print_format', 'json', '-show_format', file_path]
+        _debug_log(f"[FFmpeg] 执行命令: {' '.join(cmd)}")
         result = subprocess.run(
-            [ffprobe, '-v', 'quiet', '-print_format', 'json', '-show_format', file_path],
+            cmd,
             capture_output=True, text=True, timeout=30,
             shell=use_shell,
             creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0
         )
         _debug_log(f"[FFmpeg] ffprobe 返回码: {result.returncode}")
-        _debug_log(f"[FFmpeg] ffprobe stdout: {(result.stdout or '')[:300]}")
+        _debug_log(f"[FFmpeg] ffprobe stdout长度: {len(result.stdout or '')}")
         _debug_log(f"[FFmpeg] ffprobe stderr: {(result.stderr or '')[:300]}")
         if result.returncode != 0:
             raise RuntimeError(f"ffprobe 返回错误 (code {result.returncode}): {(result.stderr or '')[:200]}")
-        if not result.stdout:
+        if not result.stdout or not result.stdout.strip():
+            # Try alternative approach: write output to temp file
+            _debug_log("[FFmpeg] stdout为空，尝试写入临时文件方式...")
+            import tempfile
+            tmp = os.path.join(tempfile.gettempdir(), 'ffprobe_out.json')
+            cmd2 = f'"{ffprobe}" -v quiet -print_format json -show_format "{file_path}" > "{tmp}"'
+            subprocess.run(cmd2, shell=True, timeout=30,
+                          creationflags=subprocess.CREATE_NO_WINDOW)
+            if os.path.exists(tmp):
+                with open(tmp, 'r', encoding='utf-8') as f:
+                    result_stdout = f.read()
+                os.remove(tmp)
+                if result_stdout.strip():
+                    info = json.loads(result_stdout)
+                    duration = float(info['format']['duration'])
+                    _debug_log(f"[FFmpeg] 视频时长(临时文件方式): {duration}秒")
+                    return duration
             raise RuntimeError(f"ffprobe 没有输出，请检查文件是否存在: {file_path}")
         info = json.loads(result.stdout)
         duration = float(info['format']['duration'])
