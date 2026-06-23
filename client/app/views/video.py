@@ -1292,7 +1292,9 @@ class VideoView(QWidget):
             elif g.get("status")=="error": si.setForeground(QColor(DANGER))
             self._cut_table.setItem(i, 4, si)
             self._cut_table.setItem(i, 5, QTableWidgetItem(f"{g.get('progress',0)}%"))
-            ow = QWidget(); ow.setMinimumWidth(110); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
+            ow = QWidget(); ow.setMinimumWidth(110)
+            ow.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             gid = g["id"]
             if g.get("status") == "pending":
                 ol.addWidget(_cell_btn("裁切", CELL_BTN_PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
@@ -1355,7 +1357,9 @@ class VideoView(QWidget):
             elif t.get("status")=="error": si.setForeground(QColor(DANGER))
             self._mix_table.setItem(i, 5, si)
             tid = t["id"]
-            ow = QWidget(); ow.setMinimumWidth(140); ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
+            ow = QWidget(); ow.setMinimumWidth(140)
+            ow.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             if t.get("status") == "pending":
                 ol.addWidget(_cell_btn("混剪", CELL_BTN_PRIMARY, lambda _, tt=tid: self._mix_one(tt)))
             if t.get("status") == "done":

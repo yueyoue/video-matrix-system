@@ -19,7 +19,7 @@ class ColorButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(28)
         self.setMinimumWidth(50)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         # Disable stylesheet inheritance completely
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
 
