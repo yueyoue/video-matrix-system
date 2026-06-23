@@ -466,3 +466,26 @@ def mix_videos(video_paths: list, output_path: str, bg_audio: str = None, volume
             os.remove(list_file)
 
     return output_path
+
+
+def add_subtitle(video_path: str, text: str, position: str = 'bottom'):
+    """给视频添加文字字幕（使用 drawtext 滤镜）"""
+    if not text:
+        return
+    ffprobe = get_ffmpeg()
+    if not ffprobe:
+        return
+    import tempfile
+    tmp_out = video_path + '.sub.mp4'
+    safe_text = text.replace("'", "'" * 2).replace(":", "\\:")
+    y_pos = 'h-th-20' if position == 'bottom' else '20'
+    filter_str = f"drawtext=text='{safe_text}':fontsize=24:fontcolor=white:borderw=2:bordercolor=black:x=(w-tw)/2:y={y_pos}"
+    cmd = [ffprobe, '-y', '-i', video_path, '-vf', filter_str, '-c:a', 'copy', tmp_out]
+    use_shell = os.name == 'nt'
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                            shell=use_shell,
+                            creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
+    if result.returncode == 0:
+        os.replace(tmp_out, video_path)
+    elif os.path.exists(tmp_out):
+        os.remove(tmp_out)

@@ -481,3 +481,26 @@ def get_clips_by_ids(clip_ids: list) -> list:
         for c in b.get("clips", []):
             clip_map[c["id"]] = c
     return [clip_map[cid] for cid in clip_ids if cid in clip_map]
+
+
+def delete_clips_from_basket(basket_id: str, clip_ids: list):
+    """从篮子中删除指定片段"""
+    db = _load_db()
+    for b in db.get("baskets", []):
+        if b["id"] == basket_id:
+            b["clips"] = [c for c in b.get("clips", []) if c["id"] not in clip_ids]
+            if not b["clips"]:
+                b["status"] = "empty"
+            break
+    _save_db(db)
+
+
+def clear_basket(basket_id: str):
+    """清空篮子中的所有片段"""
+    db = _load_db()
+    for b in db.get("baskets", []):
+        if b["id"] == basket_id:
+            b["clips"] = []
+            b["status"] = "empty"
+            break
+    _save_db(db)

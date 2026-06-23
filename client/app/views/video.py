@@ -1,8 +1,10 @@
 """
-视频处理模块 - 视频库、裁切队列、篮子、混剪队列
+视频处理模块 v2 - 视频库、裁切队列、篮子、混剪队列
+支持：多选删除、清空、文字+音频组合混剪
 """
 
 import os
+import random
 import itertools
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -11,12 +13,12 @@ from PyQt6.QtWidgets import (
     QLineEdit, QSpinBox, QComboBox, QFileDialog, QGridLayout, QScrollArea,
     QSizePolicy, QProgressBar, QCheckBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QHeaderView, QFormLayout, QGroupBox, QMessageBox,
-    QListWidget, QListWidgetItem, QAbstractItemView
+    QListWidget, QListWidgetItem, QAbstractItemView, QDialog, QDialogButtonBox
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
     DANGER, WARNING, BORDER_COLOR, BTN_PRIMARY, BTN_DEFAULT, BTN_DANGER,
-    BTN_PRIMARY_SM, INPUT_STYLE, SPINBOX_STYLE, TABLE_STYLE
+    BTN_PRIMARY_SM, BTN_DANGER_TEXT, INPUT_STYLE, SPINBOX_STYLE, TABLE_STYLE
 )
 from ..widgets.toast import Toast
 from .. import ffmpeg
@@ -28,86 +30,51 @@ from .. import data_manager as dm
 # ══════════════════════════════════════════════════════════════
 
 class _UploadWorker(QThread):
-    """上传视频到视频库"""
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
-
-    def __init__(self, file_paths: list):
-        super().__init__()
-        self.file_paths = file_paths
-
+    def __init__(self, file_paths): super().__init__(); self.file_paths = file_paths
     def run(self):
         try:
             results = []
             for fp in self.file_paths:
-                # 获取视频时长
-                duration = 0
-                try:
-                    duration = ffmpeg.get_duration(fp)
-                except Exception:
-                    pass
-                video = dm.add_video(fp, duration=duration)
-                results.append(video)
+                dur = 0
+                try: dur = ffmpeg.get_duration(fp)
+                except: pass
+                results.append(dm.add_video(fp, duration=dur))
             self.done.emit({"videos": results})
-        except Exception as e:
-            self.failed.emit(str(e))
+        except Exception as e: self.failed.emit(str(e))
 
 
 class _CutWorker(QThread):
-    """裁切视频"""
-    progress = pyqtSignal(str, int)  # (message, percent)
-    done = pyqtSignal(str)  # group_id
+    progress = pyqtSignal(str, int)
+    done = pyqtSignal(str)
     failed = pyqtSignal(str)
-
-    def __init__(self, group_id: str):
-        super().__init__()
-        self.group_id = group_id
-
+    def __init__(self, group_id): super().__init__(); self.group_id = group_id
     def run(self):
         try:
+            from ..api import _debug_log
             group = dm.get_cut_group(self.group_id)
-            if not group:
-                self.failed.emit("裁切组不存在")
-                return
-
+            if not group: self.failed.emit("裁切组不存在"); return
             dm.update_cut_group_status(self.group_id, "cutting", 0)
             cut_rule = group["cut_rule"]
             basket_id = group["basket_id"]
-
-            # 创建篮子目录
             basket_dir = dm.BASKETS_DIR / basket_id
             basket_dir.mkdir(parents=True, exist_ok=True)
-
             videos = [dm.get_video(vid) for vid in group["video_ids"]]
             videos = [v for v in videos if v]
             total = len(videos)
-
             for idx, video in enumerate(videos):
-                self.progress.emit(f"正在裁切: {video['name']} ({idx+1}/{total})", int((idx) / total * 100))
-
-                # 计算裁切参数
+                self.progress.emit(f"裁切: {video['name']} ({idx+1}/{total})", int(idx/total*100))
                 if cut_rule["mode"] == "segments":
-                    segments = cut_rule["value"]
-                    clip_paths = ffmpeg.cut_video_segments(
-                        video["path"], segments, str(basket_dir), video["name"]
-                    )
+                    clips = ffmpeg.cut_video_segments(video["path"], cut_rule["value"], str(basket_dir), video["name"])
                 else:
-                    segment_duration = cut_rule["value"]
-                    clip_paths = ffmpeg.cut_video_by_duration(
-                        video["path"], segment_duration, str(basket_dir), video["name"]
-                    )
-
-                # 记录片段到篮子
-                for i, clip_path in enumerate(clip_paths):
-                    clip_dur = 0
-                    try:
-                        clip_dur = ffmpeg.get_duration(clip_path)
-                    except Exception:
-                        pass
-                    dm.add_clip_to_basket(basket_id, video["name"], i + 1, clip_path, clip_dur)
-
-                dm.update_cut_group_status(self.group_id, "cutting", int((idx + 1) / total * 100))
-
+                    clips = ffmpeg.cut_video_by_duration(video["path"], cut_rule["value"], str(basket_dir), video["name"])
+                for i, cp in enumerate(clips):
+                    cd = 0
+                    try: cd = ffmpeg.get_duration(cp)
+                    except: pass
+                    dm.add_clip_to_basket(basket_id, video["name"], i+1, cp, cd)
+                dm.update_cut_group_status(self.group_id, "cutting", int((idx+1)/total*100))
             dm.update_cut_group_status(self.group_id, "done", 100)
             self.progress.emit("裁切完成!", 100)
             self.done.emit(self.group_id)
@@ -117,76 +84,173 @@ class _CutWorker(QThread):
 
 
 class _MixWorker(QThread):
-    """混剪视频"""
-    progress = pyqtSignal(str, int)  # (message, percent)
-    done = pyqtSignal(str)  # task_id
+    progress = pyqtSignal(str, int)
+    done = pyqtSignal(str)
     failed = pyqtSignal(str)
-
-    def __init__(self, task_id: str):
+    def __init__(self, task_id, audio_combos=None, audio_mode="random"):
         super().__init__()
         self.task_id = task_id
-
+        self.audio_combos = audio_combos or []
+        self.audio_mode = audio_mode
     def run(self):
         try:
+            from ..api import _debug_log
             task = dm.get_mix_task(self.task_id)
-            if not task:
-                self._debug_log(f"混剪任务不存在: {self.task_id}")
-                self.failed.emit("混剪任务不存在")
-                return
-
+            if not task: self.failed.emit("混剪任务不存在"); return
             dm.update_mix_task_progress(self.task_id, 0, "running")
             combinations = task.get("combinations", [])
             total = len(combinations)
-            basket_id = task["basket_id"]
-
-            self._debug_log(f"混剪任务开始: task_id={self.task_id}, 组合数={total}, basket_id={basket_id}")
-
             if total == 0:
-                self._debug_log("组合数为0，无法混剪")
                 dm.update_mix_task_progress(self.task_id, 0, "error")
-                self.failed.emit("组合数为0，请检查篮子中是否有裁切好的片段")
-                return
-
-            # 混剪输出目录
+                self.failed.emit("组合数为0"); return
             mix_dir = dm.MIXED_DIR / self.task_id
             mix_dir.mkdir(parents=True, exist_ok=True)
-
             for idx, clip_ids in enumerate(combinations):
-                self.progress.emit(
-                    f"正在混剪: {idx+1}/{total}",
-                    int((idx) / total * 100)
-                )
-
-                # 获取片段信息
+                self.progress.emit(f"混剪 {idx+1}/{total}", int(idx/total*100))
                 clips = dm.get_clips_by_ids(clip_ids)
                 clip_paths = [c["path"] for c in clips]
-
-                self._debug_log(f"混剪 {idx+1}/{total}: {len(clips)} 个片段")
-
-                # 混剪文件名
                 mix_name = f"混剪_{idx+1}"
                 out_path = str(mix_dir / f"{mix_name}.mp4")
-
-                # 执行混剪
-                ffmpeg.mix_videos(clip_paths, out_path)
-
-                # 记录结果
+                # 选择文字+音频组合
+                audio_path = None
+                subtitle_text = ""
+                if self.audio_combos:
+                    if self.audio_mode == "random":
+                        combo = random.choice(self.audio_combos)
+                    else:
+                        combo = self.audio_combos[idx % len(self.audio_combos)]
+                    audio_path = combo.get("audio")
+                    subtitle_text = combo.get("text", "")
+                ffmpeg.mix_videos(clip_paths, out_path, bg_audio=audio_path)
+                if subtitle_text:
+                    try:
+                        ffmpeg.add_subtitle(out_path, subtitle_text)
+                    except: pass
                 dm.add_mixed_result(self.task_id, mix_name, out_path, clip_ids)
-                dm.update_mix_task_progress(self.task_id, idx + 1)
-
+                dm.update_mix_task_progress(self.task_id, idx+1)
             dm.update_mix_task_progress(self.task_id, total, "done")
             self.progress.emit("混剪完成!", 100)
             self.done.emit(self.task_id)
         except Exception as e:
             import traceback
-            err_detail = traceback.format_exc()
-            self._debug_log(f"混剪异常: {e}\n{err_detail}")
+            _debug_log(f"[MixWorker] 异常: {e}\n{traceback.format_exc()}")
             dm.update_mix_task_progress(self.task_id, 0, "error")
             self.failed.emit(str(e))
 
-    def _debug_log(self, msg):
-        from ..api import _debug_log
-        _debug_log(f"[MixWorker] {msg}")
+
+# ══════════════════════════════════════════════════════════════
+# 文字+音频组合对话框
+# ══════════════════════════════════════════════════════════════
+
+class AudioComboDialog(QDialog):
+    """编辑文字+音频组合"""
+    def __init__(self, parent=None, combos=None):
+        super().__init__(parent)
+        self.setWindowTitle("文字+音频组合设置")
+        self.setMinimumWidth(500)
+        self.combos = list(combos) if combos else []
+        self._init_ui()
+        self._refresh_list()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+
+        # 说明
+        info = QLabel("每个组合包含一段文字（字幕）和一个音频文件。混剪时每个视频会随机或按顺序使用一个组合。")
+        info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        # 添加区域
+        add_frame = QFrame()
+        add_frame.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
+        add_layout = QHBoxLayout(add_frame)
+
+        add_layout.addWidget(QLabel("文字:"))
+        self._text_input = QLineEdit()
+        self._text_input.setPlaceholderText("字幕文字（可选）")
+        self._text_input.setStyleSheet(INPUT_STYLE)
+        add_layout.addWidget(self._text_input)
+
+        add_layout.addWidget(QLabel("音频:"))
+        self._audio_input = QLineEdit()
+        self._audio_input.setPlaceholderText("音频文件路径")
+        self._audio_input.setStyleSheet(INPUT_STYLE)
+        add_layout.addWidget(self._audio_input)
+
+        browse_btn = QPushButton("浏览")
+        browse_btn.setStyleSheet(BTN_DEFAULT)
+        browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        browse_btn.clicked.connect(self._browse_audio)
+        add_layout.addWidget(browse_btn)
+
+        add_btn = QPushButton("添加")
+        add_btn.setStyleSheet(BTN_PRIMARY_SM)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.clicked.connect(self._add_combo)
+        add_layout.addWidget(add_btn)
+
+        layout.addWidget(add_frame)
+
+        # 列表
+        self._list = QTableWidget()
+        self._list.setStyleSheet(TABLE_STYLE)
+        self._list.setColumnCount(4)
+        self._list.setHorizontalHeaderLabels(["序号", "文字", "音频", "操作"])
+        self._list.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._list.verticalHeader().setVisible(False)
+        layout.addWidget(self._list, 1)
+
+        # 底部按钮
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+    def _browse_audio(self):
+        path, _ = QFileDialog.getOpenFileName(self, "选择音频", "", "音频 (*.mp3 *.wav *.aac *.m4a);;所有 (*)")
+        if path: self._audio_input.setText(path)
+
+    def _add_combo(self):
+        text = self._text_input.text().strip()
+        audio = self._audio_input.text().strip()
+        if not text and not audio:
+            Toast.warning(self, "请至少填写文字或音频")
+            return
+        self.combos.append({"text": text, "audio": audio})
+        self._text_input.clear()
+        self._audio_input.clear()
+        self._refresh_list()
+
+    def _refresh_list(self):
+        self._list.setRowCount(len(self.combos))
+        for i, c in enumerate(self.combos):
+            self._list.setItem(i, 0, QTableWidgetItem(str(i+1)))
+            self._list.setItem(i, 1, QTableWidgetItem(c.get("text", "")))
+            self._list.setItem(i, 2, QTableWidgetItem(os.path.basename(c.get("audio", "")) or "--"))
+            del_btn = QPushButton("删除")
+            del_btn.setStyleSheet(f"color: {DANGER}; border:none; font-size:12px;")
+            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            idx = i
+            del_btn.clicked.connect(lambda _, ii=idx: (self.combos.pop(ii), self._refresh_list()))
+            self._list.setCellWidget(i, 3, del_btn)
+
+    def get_combos(self):
+        return self.combos
+
+
+# ══════════════════════════════════════════════════════════════
+# 辅助函数
+# ══════════════════════════════════════════════════════════════
+
+def _btn(text, color, callback):
+    """快速创建操作按钮"""
+    btn = QPushButton(text)
+    btn.setStyleSheet(f"color: {color}; border: none; font-size: 12px; padding: 2px 6px;")
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.clicked.connect(callback)
+    return btn
 
 
 # ══════════════════════════════════════════════════════════════
@@ -194,539 +258,420 @@ class _MixWorker(QThread):
 # ══════════════════════════════════════════════════════════════
 
 class VideoView(QWidget):
-    """视频处理主页面"""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self._workers = []
+        self._audio_combos = []  # 文字+音频组合
+        self._audio_mode = "random"
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
-
-        # Tab widget
         self._tabs = QTabWidget()
         self._tabs.setStyleSheet("""
             QTabWidget::pane { border: none; }
-            QTabBar::tab {
-                padding: 10px 24px; font-size: 14px;
-                border: none; border-bottom: 2px solid transparent;
-                color: #999;
-            }
+            QTabBar::tab { padding: 10px 24px; font-size: 14px; border: none; border-bottom: 2px solid transparent; color: #999; }
             QTabBar::tab:selected { color: #165DFF; border-bottom: 2px solid #165DFF; }
         """)
-
         self._tabs.addTab(self._create_library_tab(), "📁 视频库")
-        self._tabs.addTab(self._create_cut_queue_tab(), "✂️ 裁切队列")
-        self._tabs.addTab(self._create_baskets_tab(), "🧺 篮子")
-        self._tabs.addTab(self._create_mix_queue_tab(), "🎞️ 混剪队列")
-
+        self._tabs.addTab(self._create_cut_tab(), "✂️ 裁切队列")
+        self._tabs.addTab(self._create_basket_tab(), "🧺 篮子")
+        self._tabs.addTab(self._create_mix_tab(), "🎞️ 混剪队列")
         layout.addWidget(self._tabs)
 
-    # ── 视频库 Tab ─────────────────────────────────────────
+    # ── 视频库 ─────────────────────────────────────────────
     def _create_library_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
-
-        # 操作栏
-        btn_bar = QHBoxLayout()
-        upload_btn = QPushButton("📁 上传视频")
-        upload_btn.setStyleSheet(BTN_PRIMARY)
-        upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        upload_btn.clicked.connect(self._upload_videos)
-        btn_bar.addWidget(upload_btn)
-
-        btn_bar.addWidget(QLabel("  选中视频添加到裁切组:"))
-
-        self._group_name_input = QLineEdit()
-        self._group_name_input.setPlaceholderText("裁切组名称（可选）")
-        self._group_name_input.setStyleSheet(INPUT_STYLE)
-        self._group_name_input.setFixedWidth(150)
-        btn_bar.addWidget(self._group_name_input)
-
-        add_to_cut_btn = QPushButton("✂️ 添加到裁切队列")
-        add_to_cut_btn.setStyleSheet(BTN_PRIMARY_SM)
-        add_to_cut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_to_cut_btn.clicked.connect(self._add_to_cut_queue)
-        btn_bar.addWidget(add_to_cut_btn)
-
-        btn_bar.addStretch()
-        refresh_lib_btn = QPushButton("🔄 刷新")
-        refresh_lib_btn.setStyleSheet(BTN_DEFAULT)
-        refresh_lib_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        refresh_lib_btn.clicked.connect(self._refresh_library)
-        btn_bar.addWidget(refresh_lib_btn)
-        layout.addLayout(btn_bar)
-
-        # 视频列表
-        self._library_table = QTableWidget()
-        self._library_table.setStyleSheet(TABLE_STYLE)
-        self._library_table.setColumnCount(7)
-        self._library_table.setHorizontalHeaderLabels(["选择", "文件名", "时长", "大小", "来源", "添加时间", "操作"])
-        self._library_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self._library_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._library_table.setColumnWidth(0, 40)
-        self._library_table.verticalHeader().setVisible(False)
-        self._library_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        layout.addWidget(self._library_table, 1)
-
+        tab = QWidget(); layout = QVBoxLayout(tab); layout.setSpacing(12)
+        bar = QHBoxLayout()
+        bar.addWidget(_btn("📁 上传视频", PRIMARY, self._upload_videos))
+        bar.addWidget(QLabel("  "))
+        self._group_name = QLineEdit(); self._group_name.setPlaceholderText("裁切组名称"); self._group_name.setStyleSheet(INPUT_STYLE); self._group_name.setFixedWidth(130)
+        bar.addWidget(self._group_name)
+        bar.addWidget(_btn("✂️ 添加到裁切队列", PRIMARY, self._add_to_cut))
+        bar.addStretch()
+        bar.addWidget(_btn("🔄 刷新", TEXT_SECONDARY, self._refresh_library))
+        layout.addLayout(bar)
+        self._lib_table = QTableWidget()
+        self._lib_table.setStyleSheet(TABLE_STYLE)
+        self._lib_table.setColumnCount(7)
+        self._lib_table.setHorizontalHeaderLabels(["☑", "文件名", "时长", "大小", "来源", "时间", "操作"])
+        self._lib_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._lib_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._lib_table.setColumnWidth(0, 35)
+        self._lib_table.verticalHeader().setVisible(False)
+        layout.addWidget(self._lib_table, 1)
         return tab
 
-    # ── 裁切队列 Tab ───────────────────────────────────────
-    def _create_cut_queue_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
-
-        # 裁切规则设置
-        rule_group = QGroupBox("裁切规则")
-        rule_group.setStyleSheet(f"""
-            QGroupBox {{
-                {CARD_STYLE}
-                font-size: 14px; font-weight: 600;
-                padding-top: 16px; margin-top: 8px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 16px; padding: 0 8px;
-            }}
-        """)
-        rule_layout = QFormLayout(rule_group)
-        rule_layout.setSpacing(12)
-
-        self._cut_mode = QComboBox()
-        self._cut_mode.addItems(["按段数裁切", "按时长裁切（秒）"])
-        self._cut_mode.setStyleSheet(INPUT_STYLE)
-        rule_layout.addRow("裁切方式:", self._cut_mode)
-
-        self._cut_value = QSpinBox()
-        self._cut_value.setRange(1, 999)
-        self._cut_value.setValue(5)
-        self._cut_value.setStyleSheet(SPINBOX_STYLE)
-        rule_layout.addRow("裁切值:", self._cut_value)
-
-        self._mix_segments = QSpinBox()
-        self._mix_segments.setRange(1, 20)
-        self._mix_segments.setValue(1)
-        self._mix_segments.setStyleSheet(SPINBOX_STYLE)
-        rule_layout.addRow("每个混剪取几段:", self._mix_segments)
-
-        layout.addWidget(rule_group)
-
+    # ── 裁切队列 ───────────────────────────────────────────
+    def _create_cut_tab(self):
+        tab = QWidget(); layout = QVBoxLayout(tab); layout.setSpacing(12)
+        # 规则
+        rule_grp = QGroupBox("裁切规则")
+        rule_grp.setStyleSheet(f"QGroupBox {{{CARD_STYLE} font-size:14px; font-weight:600; padding-top:16px; margin-top:8px;}} QGroupBox::title {{subcontrol-origin:margin; left:16px; padding:0 8px;}}")
+        rl = QFormLayout(rule_grp); rl.setSpacing(10)
+        self._cut_mode = QComboBox(); self._cut_mode.addItems(["按段数", "按时长(秒)"]); self._cut_mode.setStyleSheet(INPUT_STYLE)
+        rl.addRow("裁切方式:", self._cut_mode)
+        self._cut_val = QSpinBox(); self._cut_val.setRange(1, 9999); self._cut_val.setValue(5); self._cut_val.setStyleSheet(SPINBOX_STYLE)
+        rl.addRow("裁切值:", self._cut_val)
+        self._mix_seg = QSpinBox(); self._mix_seg.setRange(1, 50); self._mix_seg.setValue(1); self._mix_seg.setStyleSheet(SPINBOX_STYLE)
+        rl.addRow("每个混剪取几段:", self._mix_seg)
+        layout.addWidget(rule_grp)
         # 操作栏
-        btn_bar = QHBoxLayout()
-        start_cut_btn = QPushButton("▶️ 开始裁切选中组")
-        start_cut_btn.setStyleSheet(BTN_PRIMARY)
-        start_cut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        start_cut_btn.clicked.connect(self._start_cut_selected)
-        btn_bar.addWidget(start_cut_btn)
-
-        start_all_btn = QPushButton("▶️ 裁切全部待处理")
-        start_all_btn.setStyleSheet(BTN_DEFAULT)
-        start_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        start_all_btn.clicked.connect(self._start_cut_all)
-        btn_bar.addWidget(start_all_btn)
-
-        btn_bar.addStretch()
-        btn_bar.addWidget(QLabel("进度:"))
-        self._cut_progress = QProgressBar()
-        self._cut_progress.setFixedWidth(200)
-        self._cut_progress.setFixedHeight(20)
-        self._cut_progress.setValue(0)
-        btn_bar.addWidget(self._cut_progress)
-        layout.addLayout(btn_bar)
-
-        # 裁切组列表
+        bar = QHBoxLayout()
+        bar.addWidget(_btn("▶️ 裁切选中", PRIMARY, self._cut_selected))
+        bar.addWidget(_btn("▶️ 裁切全部", DEFAULT, self._cut_all))
+        bar.addWidget(_btn("🗑️ 删除选中", DANGER, self._cut_delete_selected))
+        bar.addWidget(_btn("🗑️ 清空全部", DANGER, self._cut_clear_all))
+        bar.addStretch()
+        bar.addWidget(QLabel("进度:"))
+        self._cut_pbar = QProgressBar(); self._cut_pbar.setFixedWidth(180); self._cut_pbar.setFixedHeight(18)
+        bar.addWidget(self._cut_pbar)
+        layout.addLayout(bar)
+        # 表格
         self._cut_table = QTableWidget()
         self._cut_table.setStyleSheet(TABLE_STYLE)
-        self._cut_table.setColumnCount(6)
-        self._cut_table.setHorizontalHeaderLabels(["组名", "视频数", "裁切规则", "状态", "进度", "操作"])
+        self._cut_table.setColumnCount(7)
+        self._cut_table.setHorizontalHeaderLabels(["☑", "组名", "视频数", "规则", "状态", "进度", "操作"])
         self._cut_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._cut_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._cut_table.setColumnWidth(0, 35)
         self._cut_table.verticalHeader().setVisible(False)
         layout.addWidget(self._cut_table, 1)
-
         return tab
 
-    # ── 篮子 Tab ───────────────────────────────────────────
-    def _create_baskets_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
-
-        # 篮子选择
-        top_bar = QHBoxLayout()
-        top_bar.addWidget(QLabel("选择篮子:"))
-        self._basket_combo = QComboBox()
-        self._basket_combo.setStyleSheet(INPUT_STYLE)
-        self._basket_combo.setMinimumWidth(200)
-        self._basket_combo.currentIndexChanged.connect(self._on_basket_selected)
-        top_bar.addWidget(self._basket_combo)
-
-        top_bar.addStretch()
-
-        self._basket_status_label = QLabel("")
-        self._basket_status_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        top_bar.addWidget(self._basket_status_label)
-        layout.addLayout(top_bar)
-
-        # 篮子内容表格
+    # ── 篮子 ───────────────────────────────────────────────
+    def _create_basket_tab(self):
+        tab = QWidget(); layout = QVBoxLayout(tab); layout.setSpacing(12)
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("篮子:"))
+        self._basket_combo = QComboBox(); self._basket_combo.setStyleSheet(INPUT_STYLE); self._basket_combo.setMinimumWidth(200)
+        self._basket_combo.currentIndexChanged.connect(self._on_basket_sel)
+        bar.addWidget(self._basket_combo)
+        bar.addWidget(_btn("🗑️ 删除选中片段", DANGER, self._basket_delete_selected))
+        bar.addWidget(_btn("🗑️ 清空当前篮子", DANGER, self._basket_clear))
+        bar.addStretch()
+        self._basket_status = QLabel(""); self._basket_status.setStyleSheet(f"color:{TEXT_SECONDARY};")
+        bar.addWidget(self._basket_status)
+        layout.addLayout(bar)
         self._basket_table = QTableWidget()
         self._basket_table.setStyleSheet(TABLE_STYLE)
-        self._basket_table.setColumnCount(5)
-        self._basket_table.setHorizontalHeaderLabels(["来源视频", "片段序号", "时长", "路径", "ID"])
+        self._basket_table.setColumnCount(6)
+        self._basket_table.setHorizontalHeaderLabels(["☑", "来源", "片段", "时长", "路径", "ID"])
         self._basket_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._basket_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._basket_table.setColumnWidth(0, 35)
         self._basket_table.verticalHeader().setVisible(False)
         layout.addWidget(self._basket_table, 1)
-
         return tab
 
-    # ── 混剪队列 Tab ───────────────────────────────────────
-    def _create_mix_queue_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
-
+    # ── 混剪队列 ───────────────────────────────────────────
+    def _create_mix_tab(self):
+        tab = QWidget(); layout = QVBoxLayout(tab); layout.setSpacing(12)
+        # 文字+音频设置
+        audio_frame = QFrame()
+        audio_frame.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
+        al = QHBoxLayout(audio_frame)
+        al.addWidget(QLabel("🎵 文字+音频:"))
+        self._audio_mode_combo = QComboBox()
+        self._audio_mode_combo.addItems(["随机分配", "按顺序分配"])
+        self._audio_mode_combo.setStyleSheet(INPUT_STYLE)
+        self._audio_mode_combo.setFixedWidth(120)
+        al.addWidget(self._audio_mode_combo)
+        edit_audio_btn = QPushButton("编辑组合")
+        edit_audio_btn.setStyleSheet(BTN_DEFAULT)
+        edit_audio_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_audio_btn.clicked.connect(self._edit_audio_combos)
+        al.addWidget(edit_audio_btn)
+        self._audio_count_label = QLabel("0个组合")
+        self._audio_count_label.setStyleSheet(f"color:{TEXT_SECONDARY};")
+        al.addWidget(self._audio_count_label)
+        al.addStretch()
+        layout.addWidget(audio_frame)
         # 操作栏
-        btn_bar = QHBoxLayout()
-        start_mix_btn = QPushButton("▶️ 开始混剪选中任务")
-        start_mix_btn.setStyleSheet(BTN_PRIMARY)
-        start_mix_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        start_mix_btn.clicked.connect(self._start_mix_selected)
-        btn_bar.addWidget(start_mix_btn)
-
-        btn_bar.addStretch()
-
-        btn_bar.addWidget(QLabel("进度:"))
-        self._mix_progress = QProgressBar()
-        self._mix_progress.setFixedWidth(200)
-        self._mix_progress.setFixedHeight(20)
-        self._mix_progress.setValue(0)
-        btn_bar.addWidget(self._mix_progress)
-        layout.addLayout(btn_bar)
-
-        # 混剪任务列表
+        bar = QHBoxLayout()
+        bar.addWidget(_btn("▶️ 开始混剪", PRIMARY, self._mix_selected))
+        bar.addWidget(_btn("🗑️ 删除选中", DANGER, self._mix_delete_selected))
+        bar.addWidget(_btn("🗑️ 清空全部", DANGER, self._mix_clear_all))
+        bar.addStretch()
+        bar.addWidget(QLabel("进度:"))
+        self._mix_pbar = QProgressBar(); self._mix_pbar.setFixedWidth(180); self._mix_pbar.setFixedHeight(18)
+        bar.addWidget(self._mix_pbar)
+        layout.addLayout(bar)
+        # 表格
         self._mix_table = QTableWidget()
         self._mix_table.setStyleSheet(TABLE_STYLE)
-        self._mix_table.setColumnCount(6)
-        self._mix_table.setHorizontalHeaderLabels(["篮子", "每个取几段", "组合数", "已完成", "状态", "操作"])
+        self._mix_table.setColumnCount(7)
+        self._mix_table.setHorizontalHeaderLabels(["☑", "篮子", "取几段", "组合数", "已完成", "状态", "操作"])
         self._mix_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._mix_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._mix_table.setColumnWidth(0, 35)
         self._mix_table.verticalHeader().setVisible(False)
         layout.addWidget(self._mix_table, 1)
-
         return tab
 
     # ══════════════════════════════════════════════════════════
-    # 数据加载
+    # 数据刷新
     # ══════════════════════════════════════════════════════════
 
     def load_data(self):
-        """刷新所有数据"""
-        self._refresh_library()
-        self._refresh_cut_queue()
-        self._refresh_baskets()
-        self._refresh_mix_queue()
+        self._refresh_library(); self._refresh_cut(); self._refresh_baskets(); self._refresh_mix()
 
     def _refresh_library(self):
         videos = dm.get_videos()
-        self._library_table.setRowCount(len(videos))
+        self._lib_table.setRowCount(len(videos))
         for i, v in enumerate(videos):
-            # 选择复选框
-            cb = QCheckBox()
-            self._library_table.setCellWidget(i, 0, cb)
+            self._lib_table.setCellWidget(i, 0, QCheckBox())
+            self._lib_table.setItem(i, 1, QTableWidgetItem(v["name"]))
+            d = v.get("duration", 0)
+            self._lib_table.setItem(i, 2, QTableWidgetItem(f"{int(d//60)}:{int(d%60):02d}" if d else "--"))
+            s = v.get("size", 0)
+            self._lib_table.setItem(i, 3, QTableWidgetItem(f"{s/1048576:.1f}MB" if s else "--"))
+            self._lib_table.setItem(i, 4, QTableWidgetItem("上传" if v.get("source")=="upload" else "混剪"))
+            self._lib_table.setItem(i, 5, QTableWidgetItem(v.get("added_at", "")))
+            vid = v["id"]
+            self._lib_table.setCellWidget(i, 6, _btn("删除", DANGER, lambda _, vv=vid: self._del_video(vv)))
 
-            self._library_table.setItem(i, 1, QTableWidgetItem(v["name"]))
-
-            dur = v.get("duration", 0)
-            dur_str = f"{int(dur//60)}:{int(dur%60):02d}" if dur > 0 else "--"
-            self._library_table.setItem(i, 2, QTableWidgetItem(dur_str))
-
-            size = v.get("size", 0)
-            size_str = f"{size/1024/1024:.1f} MB" if size > 0 else "--"
-            self._library_table.setItem(i, 3, QTableWidgetItem(size_str))
-
-            source = "上传" if v.get("source") == "upload" else "混剪"
-            self._library_table.setItem(i, 4, QTableWidgetItem(source))
-            self._library_table.setItem(i, 5, QTableWidgetItem(v.get("added_at", "")))
-
-            # 删除按钮
-            del_btn = QPushButton("删除")
-            del_btn.setStyleSheet(f"color: {DANGER}; border: none; font-size: 12px;")
-            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            vid_id = v["id"]
-            del_btn.clicked.connect(lambda _, vid=vid_id: self._delete_video(vid))
-            self._library_table.setCellWidget(i, 6, del_btn)
-
-    def _refresh_cut_queue(self):
+    def _refresh_cut(self):
         groups = dm.get_cut_groups()
         self._cut_table.setRowCount(len(groups))
         for i, g in enumerate(groups):
-            self._cut_table.setItem(i, 0, QTableWidgetItem(g["name"]))
-            self._cut_table.setItem(i, 1, QTableWidgetItem(str(g.get("video_count", 0))))
-
-            rule = g.get("cut_rule", {})
-            rule_text = f"{'段数' if rule.get('mode') == 'segments' else '时长'}: {rule.get('value', 0)}"
-            self._cut_table.setItem(i, 2, QTableWidgetItem(rule_text))
-
-            status_map = {"pending": "待裁切", "cutting": "裁切中", "done": "已完成", "error": "错误"}
-            status_text = status_map.get(g.get("status", ""), g.get("status", ""))
-            status_item = QTableWidgetItem(status_text)
-            if g.get("status") == "done":
-                status_item.setForeground(QColor(SUCCESS))
-            elif g.get("status") == "cutting":
-                status_item.setForeground(QColor(WARNING))
-            elif g.get("status") == "error":
-                status_item.setForeground(QColor(DANGER))
-            self._cut_table.setItem(i, 3, status_item)
-
-            progress = g.get("progress", 0)
-            self._cut_table.setItem(i, 4, QTableWidgetItem(f"{progress}%"))
-
-            # 操作按钮
-            op_layout = QHBoxLayout()
-            op_widget = QWidget()
-            if g.get("status") == "pending":
-                cut_btn = QPushButton("裁切")
-                cut_btn.setStyleSheet(f"color: {PRIMARY}; border: none; font-size: 12px;")
-                cut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                gid = g["id"]
-                cut_btn.clicked.connect(lambda _, gid=gid: self._start_cut(gid))
-                op_layout.addWidget(cut_btn)
-
-            del_btn = QPushButton("删除")
-            del_btn.setStyleSheet(f"color: {DANGER}; border: none; font-size: 12px;")
-            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._cut_table.setCellWidget(i, 0, QCheckBox())
+            self._cut_table.setItem(i, 1, QTableWidgetItem(g["name"]))
+            self._cut_table.setItem(i, 2, QTableWidgetItem(str(g.get("video_count", 0))))
+            r = g.get("cut_rule", {})
+            self._cut_table.setItem(i, 3, QTableWidgetItem(f"{'段数' if r.get('mode')=='segments' else '时长'}:{r.get('value',0)}"))
+            sm = {"pending":"待裁切","cutting":"裁切中","done":"已完成","error":"错误"}
+            si = QTableWidgetItem(sm.get(g.get("status",""), ""))
+            if g.get("status")=="done": si.setForeground(QColor(SUCCESS))
+            elif g.get("status")=="cutting": si.setForeground(QColor(WARNING))
+            elif g.get("status")=="error": si.setForeground(QColor(DANGER))
+            self._cut_table.setItem(i, 4, si)
+            self._cut_table.setItem(i, 5, QTableWidgetItem(f"{g.get('progress',0)}%"))
+            # 操作
+            ow = QWidget(); ol = QHBoxLayout(ow); ol.setContentsMargins(0,0,0,0)
             gid = g["id"]
-            del_btn.clicked.connect(lambda _, gid=gid: self._delete_cut_group(gid))
-            op_layout.addWidget(del_btn)
-
-            op_layout.addStretch()
-            op_widget.setLayout(op_layout)
-            self._cut_table.setCellWidget(i, 5, op_widget)
+            if g.get("status") == "pending":
+                ol.addWidget(_btn("裁切", PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
+            ol.addWidget(_btn("删除", DANGER, lambda _, gg=gid: self._del_cut(gg)))
+            ol.addStretch()
+            self._cut_table.setCellWidget(i, 6, ow)
 
     def _refresh_baskets(self):
-        baskets = dm.get_baskets()
         self._basket_combo.clear()
-        for b in baskets:
-            clip_count = len(b.get("clips", []))
-            self._basket_combo.addItem(f"{b['name']} ({clip_count}个片段)", b["id"])
+        for b in dm.get_baskets():
+            cnt = len(b.get("clips", []))
+            self._basket_combo.addItem(f"{b['name']} ({cnt}片段)", b["id"])
 
-    def _on_basket_selected(self, index):
-        basket_id = self._basket_combo.currentData()
-        if not basket_id:
-            self._basket_table.setRowCount(0)
-            self._basket_status_label.setText("")
-            return
-
-        basket = dm.get_basket(basket_id)
-        if not basket:
-            return
-
-        status_map = {"empty": "空", "ready": "就绪", "mixing": "混剪中", "done": "完成"}
-        self._basket_status_label.setText(f"状态: {status_map.get(basket.get('status', ''), '')}")
-
+    def _on_basket_sel(self, idx):
+        bid = self._basket_combo.currentData()
+        if not bid: self._basket_table.setRowCount(0); self._basket_status.setText(""); return
+        basket = dm.get_basket(bid)
+        if not basket: return
+        sm = {"empty":"空","ready":"就绪","mixing":"混剪中","done":"完成"}
+        self._basket_status.setText(f"状态: {sm.get(basket.get('status',''), '')}")
         clips = basket.get("clips", [])
         self._basket_table.setRowCount(len(clips))
         for i, c in enumerate(clips):
-            self._basket_table.setItem(i, 0, QTableWidgetItem(c.get("source_video", "")))
-            self._basket_table.setItem(i, 1, QTableWidgetItem(str(c.get("segment_index", 0))))
+            self._basket_table.setCellWidget(i, 0, QCheckBox())
+            self._basket_table.setItem(i, 1, QTableWidgetItem(c.get("source_video","")))
+            self._basket_table.setItem(i, 2, QTableWidgetItem(str(c.get("segment_index",0))))
+            d = c.get("duration", 0)
+            self._basket_table.setItem(i, 3, QTableWidgetItem(f"{int(d//60)}:{int(d%60):02d}" if d else "--"))
+            self._basket_table.setItem(i, 4, QTableWidgetItem(c.get("path","")))
+            self._basket_table.setItem(i, 5, QTableWidgetItem(c.get("id","")))
 
-            dur = c.get("duration", 0)
-            dur_str = f"{int(dur//60)}:{int(dur%60):02d}" if dur > 0 else "--"
-            self._basket_table.setItem(i, 2, QTableWidgetItem(dur_str))
-            self._basket_table.setItem(i, 3, QTableWidgetItem(c.get("path", "")))
-            self._basket_table.setItem(i, 4, QTableWidgetItem(c.get("id", "")))
-
-    def _refresh_mix_queue(self):
+    def _refresh_mix(self):
         tasks = dm.get_mix_tasks()
         self._mix_table.setRowCount(len(tasks))
         for i, t in enumerate(tasks):
-            # 篮子名
-            basket = dm.get_basket(t.get("basket_id", ""))
-            basket_name = basket["name"] if basket else "--"
-            self._mix_table.setItem(i, 0, QTableWidgetItem(basket_name))
-
-            self._mix_table.setItem(i, 1, QTableWidgetItem(str(t.get("segments_per_video", 1))))
-            self._mix_table.setItem(i, 2, QTableWidgetItem(str(t.get("total", 0))))
-            self._mix_table.setItem(i, 3, QTableWidgetItem(str(t.get("completed", 0))))
-
-            status_map = {"pending": "待处理", "running": "混剪中", "done": "已完成", "error": "错误"}
-            status_text = status_map.get(t.get("status", ""), t.get("status", ""))
-            status_item = QTableWidgetItem(status_text)
-            if t.get("status") == "done":
-                status_item.setForeground(QColor(SUCCESS))
-            elif t.get("status") == "running":
-                status_item.setForeground(QColor(WARNING))
-            self._mix_table.setItem(i, 4, status_item)
-
-            # 操作
-            op_layout = QHBoxLayout()
-            op_widget = QWidget()
-            if t.get("status") == "pending":
-                mix_btn = QPushButton("混剪")
-                mix_btn.setStyleSheet(f"color: {PRIMARY}; border: none; font-size: 12px;")
-                mix_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                tid = t["id"]
-                mix_btn.clicked.connect(lambda _, tid=tid: self._start_mix(tid))
-                op_layout.addWidget(mix_btn)
-
-            if t.get("status") == "done":
-                export_btn = QPushButton("导出到视频库")
-                export_btn.setStyleSheet(f"color: {SUCCESS}; border: none; font-size: 12px;")
-                export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                tid = t["id"]
-                export_btn.clicked.connect(lambda _, tid=tid: self._export_mix_to_library(tid))
-                op_layout.addWidget(export_btn)
-
-            del_btn = QPushButton("删除")
-            del_btn.setStyleSheet(f"color: {DANGER}; border: none; font-size: 12px;")
-            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._mix_table.setCellWidget(i, 0, QCheckBox())
+            basket = dm.get_basket(t.get("basket_id",""))
+            self._mix_table.setItem(i, 1, QTableWidgetItem(basket["name"] if basket else "--"))
+            self._mix_table.setItem(i, 2, QTableWidgetItem(str(t.get("segments_per_video",1))))
+            self._mix_table.setItem(i, 3, QTableWidgetItem(str(t.get("total",0))))
+            self._mix_table.setItem(i, 4, QTableWidgetItem(str(t.get("completed",0))))
+            sm = {"pending":"待处理","running":"混剪中","done":"已完成","error":"错误"}
+            si = QTableWidgetItem(sm.get(t.get("status",""), ""))
+            if t.get("status")=="done": si.setForeground(QColor(SUCCESS))
+            elif t.get("status")=="running": si.setForeground(QColor(WARNING))
+            elif t.get("status")=="error": si.setForeground(QColor(DANGER))
+            self._mix_table.setItem(i, 5, si)
             tid = t["id"]
-            del_btn.clicked.connect(lambda _, tid=tid: self._delete_mix_task(tid))
-            op_layout.addWidget(del_btn)
-
-            op_layout.addStretch()
-            op_widget.setLayout(op_layout)
-            self._mix_table.setCellWidget(i, 5, op_widget)
+            ow = QWidget(); ol = QHBoxLayout(ow); ol.setContentsMargins(0,0,0,0)
+            if t.get("status") == "pending":
+                ol.addWidget(_btn("混剪", PRIMARY, lambda _, tt=tid: self._mix_one(tt)))
+            if t.get("status") == "done":
+                ol.addWidget(_btn("导出", SUCCESS, lambda _, tt=tid: self._export_mix(tt)))
+            ol.addWidget(_btn("删除", DANGER, lambda _, tt=tid: self._del_mix(tt)))
+            ol.addStretch()
+            self._mix_table.setCellWidget(i, 6, ow)
 
     # ══════════════════════════════════════════════════════════
-    # 操作
+    # 视频库操作
     # ══════════════════════════════════════════════════════════
 
     def _upload_videos(self):
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "选择视频文件", "",
-            "视频文件 (*.mp4 *.avi *.mov *.mkv *.flv);;所有文件 (*)")
-        if not files:
-            return
+        files, _ = QFileDialog.getOpenFileNames(self, "选择视频", "", "视频 (*.mp4 *.avi *.mov *.mkv *.flv);;所有 (*)")
+        if not files: return
         w = _UploadWorker(files)
-        w.done.connect(lambda r: (Toast.success(self, f"上传成功，共 {len(r['videos'])} 个视频"), self._refresh_library()))
+        w.done.connect(lambda r: (Toast.success(self, f"上传{len(r['videos'])}个视频"), self._refresh_library()))
         w.failed.connect(lambda m: Toast.error(self, f"上传失败: {m}"))
-        self._workers.append(w)
-        w.start()
+        self._workers.append(w); w.start()
 
-    def _add_to_cut_queue(self):
-        # 获取选中的视频
-        selected_ids = []
-        for i in range(self._library_table.rowCount()):
-            cb = self._library_table.cellWidget(i, 0)
+    def _del_video(self, vid):
+        if QMessageBox.question(self, "确认", "删除此视频？") == QMessageBox.StandardButton.Yes:
+            dm.delete_video(vid); self._refresh_library()
+
+    def _add_to_cut(self):
+        vids = []
+        for i in range(self._lib_table.rowCount()):
+            cb = self._lib_table.cellWidget(i, 0)
             if cb and cb.isChecked():
-                vid_name = self._library_table.item(i, 1).text()
-                videos = dm.get_videos()
-                for v in videos:
-                    if v["name"] == vid_name:
-                        selected_ids.append(v["id"])
-                        break
+                name = self._lib_table.item(i, 1).text()
+                for v in dm.get_videos():
+                    if v["name"] == name: vids.append(v["id"]); break
+        if not vids: Toast.warning(self, "请勾选视频"); return
+        gname = self._group_name.text().strip()
+        mode = "segments" if self._cut_mode.currentIndex() == 0 else "duration"
+        group = dm.create_cut_group(vids, mode, self._cut_val.value(), self._mix_seg.value(), gname)
+        dm.create_mix_task(group["basket_id"], self._mix_seg.value())
+        Toast.success(self, f"已创建裁切组「{group['name']}」")
+        self._group_name.clear()
+        self._refresh_cut(); self._refresh_baskets(); self._refresh_mix()
 
-        if not selected_ids:
-            Toast.warning(self, "请先在视频库中勾选要裁切的视频")
-            return
+    # ══════════════════════════════════════════════════════════
+    # 裁切操作
+    # ══════════════════════════════════════════════════════════
 
-        group_name = self._group_name_input.text().strip()
-        cut_mode = "segments" if self._cut_mode.currentIndex() == 0 else "duration"
-        cut_value = self._cut_value.value()
-        mix_segments = self._mix_segments.value()
-
-        group = dm.create_cut_group(selected_ids, cut_mode, cut_value, mix_segments, group_name)
-        Toast.success(self, f"裁切组「{group['name']}」已创建，共 {len(selected_ids)} 个视频")
-
-        # 同时创建混剪任务
-        dm.create_mix_task(group["basket_id"], mix_segments)
-
-        self._group_name_input.clear()
-        self._refresh_cut_queue()
-        self._refresh_baskets()
-        self._refresh_mix_queue()
-
-    def _start_cut(self, group_id: str):
-        w = _CutWorker(group_id)
-        w.progress.connect(lambda msg, pct: (self._cut_progress.setValue(pct), ))
-        w.done.connect(lambda gid: (Toast.success(self, "裁切完成!"), self._refresh_cut_queue(), self._refresh_baskets(), self._refresh_mix_queue()))
+    def _cut_one(self, gid):
+        w = _CutWorker(gid)
+        w.progress.connect(lambda m, p: self._cut_pbar.setValue(p))
+        w.done.connect(lambda: (Toast.success(self,"裁切完成!"), self._refresh_cut(), self._refresh_baskets()))
         w.failed.connect(lambda m: Toast.error(self, f"裁切失败: {m}"))
-        self._workers.append(w)
-        w.start()
+        self._workers.append(w); w.start()
 
-    def _start_cut_selected(self):
-        selected = self._cut_table.currentRow()
-        if selected < 0:
-            Toast.warning(self, "请先选择一个裁切组")
-            return
+    def _cut_selected(self):
+        row = self._cut_table.currentRow()
+        if row < 0: Toast.warning(self, "请选择一行"); return
         groups = dm.get_cut_groups()
-        if selected < len(groups):
-            group = groups[selected]
-            if group["status"] != "pending":
-                Toast.warning(self, "该组已在处理或已完成")
-                return
-            self._start_cut(group["id"])
+        if row < len(groups) and groups[row]["status"] == "pending":
+            self._cut_one(groups[row]["id"])
 
-    def _start_cut_all(self):
+    def _cut_all(self):
+        for g in dm.get_cut_groups():
+            if g["status"] == "pending": self._cut_one(g["id"])
+
+    def _del_cut(self, gid):
+        if QMessageBox.question(self, "确认", "删除此裁切组及篮子？") == QMessageBox.StandardButton.Yes:
+            dm.delete_cut_group(gid); self._refresh_cut(); self._refresh_baskets(); self._refresh_mix()
+
+    def _cut_delete_selected(self):
+        ids = []
+        for i in range(self._cut_table.rowCount()):
+            cb = self._cut_table.cellWidget(i, 0)
+            if cb and cb.isChecked():
+                groups = dm.get_cut_groups()
+                if i < len(groups): ids.append(groups[i]["id"])
+        if not ids: Toast.warning(self, "请勾选要删除的项"); return
+        if QMessageBox.question(self, "确认", f"删除选中的{len(ids)}个裁切组？") == QMessageBox.StandardButton.Yes:
+            for gid in ids: dm.delete_cut_group(gid)
+            self._refresh_cut(); self._refresh_baskets(); self._refresh_mix()
+            Toast.success(self, f"已删除{len(ids)}个裁切组")
+
+    def _cut_clear_all(self):
         groups = dm.get_cut_groups()
-        pending = [g for g in groups if g["status"] == "pending"]
-        if not pending:
-            Toast.warning(self, "没有待处理的裁切组")
-            return
-        for g in pending:
-            self._start_cut(g["id"])
+        if not groups: return
+        if QMessageBox.question(self, "确认", f"清空全部{len(groups)}个裁切组？") == QMessageBox.StandardButton.Yes:
+            for g in groups: dm.delete_cut_group(g["id"])
+            self._refresh_cut(); self._refresh_baskets(); self._refresh_mix()
+            Toast.success(self, "已清空裁切队列")
 
-    def _start_mix(self, task_id: str):
-        w = _MixWorker(task_id)
-        w.progress.connect(lambda msg, pct: (self._mix_progress.setValue(pct), ))
-        w.done.connect(lambda tid: (Toast.success(self, "混剪完成!"), self._refresh_mix_queue()))
+    # ══════════════════════════════════════════════════════════
+    # 篮子操作
+    # ══════════════════════════════════════════════════════════
+
+    def _basket_delete_selected(self):
+        bid = self._basket_combo.currentData()
+        if not bid: return
+        clip_ids = []
+        for i in range(self._basket_table.rowCount()):
+            cb = self._basket_table.cellWidget(i, 0)
+            if cb and cb.isChecked():
+                cid = self._basket_table.item(i, 5).text()
+                clip_ids.append(cid)
+        if not clip_ids: Toast.warning(self, "请勾选片段"); return
+        if QMessageBox.question(self, "确认", f"删除选中的{len(clip_ids)}个片段？") == QMessageBox.StandardButton.Yes:
+            dm.delete_clips_from_basket(bid, clip_ids)
+            self._refresh_baskets()
+            Toast.success(self, f"已删除{len(clip_ids)}个片段")
+
+    def _basket_clear(self):
+        bid = self._basket_combo.currentData()
+        if not bid: return
+        basket = dm.get_basket(bid)
+        if not basket: return
+        cnt = len(basket.get("clips", []))
+        if cnt == 0: return
+        if QMessageBox.question(self, "确认", f"清空此篮子的{cnt}个片段？") == QMessageBox.StandardButton.Yes:
+            dm.clear_basket(bid)
+            self._refresh_baskets()
+            Toast.success(self, "已清空篮子")
+
+    # ══════════════════════════════════════════════════════════
+    # 混剪操作
+    # ══════════════════════════════════════════════════════════
+
+    def _edit_audio_combos(self):
+        dlg = AudioComboDialog(self, self._audio_combos)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._audio_combos = dlg.get_combos()
+            self._audio_count_label.setText(f"{len(self._audio_combos)}个组合")
+
+    def _mix_one(self, tid):
+        mode = "random" if self._audio_mode_combo.currentIndex() == 0 else "sequential"
+        w = _MixWorker(tid, self._audio_combos, mode)
+        w.progress.connect(lambda m, p: self._mix_pbar.setValue(p))
+        w.done.connect(lambda: (Toast.success(self,"混剪完成!"), self._refresh_mix()))
         w.failed.connect(lambda m: Toast.error(self, f"混剪失败: {m}"))
-        self._workers.append(w)
-        w.start()
+        self._workers.append(w); w.start()
 
-    def _start_mix_selected(self):
-        selected = self._mix_table.currentRow()
-        if selected < 0:
-            Toast.warning(self, "请先选择一个混剪任务")
-            return
+    def _mix_selected(self):
+        row = self._mix_table.currentRow()
+        if row < 0: Toast.warning(self, "请选择一行"); return
         tasks = dm.get_mix_tasks()
-        if selected < len(tasks):
-            task = tasks[selected]
-            if task["status"] != "pending":
-                Toast.warning(self, "该任务已在处理或已完成")
-                return
-            self._start_mix(task["id"])
+        if row < len(tasks) and tasks[row]["status"] == "pending":
+            self._mix_one(tasks[row]["id"])
 
-    def _export_mix_to_library(self, task_id: str):
-        """将混剪结果导出到视频库"""
+    def _export_mix(self, tid):
         db = dm._load_db()
-        results = [r for r in db.get("mixed_results", []) if r.get("task_id") == task_id]
-        count = 0
+        results = [r for r in db.get("mixed_results",[]) if r.get("task_id")==tid]
+        cnt = 0
         for r in results:
             if os.path.exists(r["path"]):
-                dm.add_mixed_video(
-                    basket_id="",
-                    mix_name=r["name"],
-                    file_path=r["path"],
-                    clips_used=r.get("clip_ids", [])
-                )
-                count += 1
-        Toast.success(self, f"已导出 {count} 个混剪视频到视频库")
-        self._refresh_library()
+                dm.add_mixed_video("", r["name"], r["path"], r.get("clip_ids",[])); cnt += 1
+        Toast.success(self, f"已导出{cnt}个视频到视频库"); self._refresh_library()
 
-    def _delete_video(self, vid_id: str):
-        reply = QMessageBox.question(self, "确认删除", "确定要删除这个视频吗？",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            dm.delete_video(vid_id)
-            self._refresh_library()
+    def _del_mix(self, tid):
+        if QMessageBox.question(self, "确认", "删除此混剪任务？") == QMessageBox.StandardButton.Yes:
+            dm.delete_mix_task(tid); self._refresh_mix()
 
-    def _delete_cut_group(self, group_id: str):
-        reply = QMessageBox.question(self, "确认删除", "确定要删除这个裁切组及其篮子吗？",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            dm.delete_cut_group(group_id)
-            self._refresh_cut_queue()
-            self._refresh_baskets()
-            self._refresh_mix_queue()
+    def _mix_delete_selected(self):
+        ids = []
+        for i in range(self._mix_table.rowCount()):
+            cb = self._mix_table.cellWidget(i, 0)
+            if cb and cb.isChecked():
+                tasks = dm.get_mix_tasks()
+                if i < len(tasks): ids.append(tasks[i]["id"])
+        if not ids: Toast.warning(self, "请勾选"); return
+        if QMessageBox.question(self, "确认", f"删除{len(ids)}个混剪任务？") == QMessageBox.StandardButton.Yes:
+            for tid in ids: dm.delete_mix_task(tid)
+            self._refresh_mix(); Toast.success(self, f"已删除{len(ids)}个任务")
 
-    def _delete_mix_task(self, task_id: str):
-        reply = QMessageBox.question(self, "确认删除", "确定要删除这个混剪任务吗？",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            dm.delete_mix_task(task_id)
-            self._refresh_mix_queue()
+    def _mix_clear_all(self):
+        tasks = dm.get_mix_tasks()
+        if not tasks: return
+        if QMessageBox.question(self, "确认", f"清空全部{len(tasks)}个混剪任务？") == QMessageBox.StandardButton.Yes:
+            for t in tasks: dm.delete_mix_task(t["id"])
+            self._refresh_mix(); Toast.success(self, "已清空混剪队列")
