@@ -17,6 +17,22 @@ from .. import api
 from .. import ffmpeg
 
 
+class _DownloadFFmpegWorker(QThread):
+    """Background thread to download FFmpeg."""
+    progress = pyqtSignal(int, str)
+    done = pyqtSignal(bool)
+
+    def run(self):
+        try:
+            result = ffmpeg.download_ffmpeg(
+                lambda pct, msg: self.progress.emit(pct, msg)
+            )
+            self.done.emit(result)
+        except Exception as e:
+            self.progress.emit(0, str(e))
+            self.done.emit(False)
+
+
 class _VideoWorker(QThread):
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
@@ -110,6 +126,29 @@ class VideoView(QWidget):
         clip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         clip_btn.clicked.connect(self._on_clip)
         clip_layout.addWidget(clip_btn)
+
+        # FFmpeg download button (shown if ffmpeg not available)
+        if not ffmpeg.is_ffmpeg_available():
+            self._ffmpeg_btn = QPushButton("⬇️ 下载 FFmpeg（裁切必需）")
+            self._ffmpeg_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: #FF7D00;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{ background: #FF9A3E; }}
+                QPushButton:disabled {{ background: #C9CDD4; }}
+            """)
+            self._ffmpeg_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._ffmpeg_btn.clicked.connect(self._download_ffmpeg)
+            clip_layout.addWidget(self._ffmpeg_btn)
+            self._ffmpeg_status = QLabel("")
+            self._ffmpeg_status.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+            clip_layout.addWidget(self._ffmpeg_status)
 
         clip_layout.addStretch()
         top_row.addWidget(clip_card)
@@ -284,6 +323,43 @@ class VideoView(QWidget):
         w.failed.connect(lambda m: Toast.error(self, f"混剪失败: {m}"))
         self._workers.append(w)
         w.start()
+
+    def _download_ffmpeg(self):
+        """Download FFmpeg automatically."""
+        if hasattr(self, '_ffmpeg_btn'):
+            self._ffmpeg_btn.setEnabled(False)
+            self._ffmpeg_btn.setText("下载中...")
+        self._dl_worker = _DownloadFFmpegWorker()
+        self._dl_worker.progress.connect(self._on_dl_progress)
+        self._dl_worker.done.connect(self._on_dl_done)
+        self._dl_worker.start()
+
+    def _on_dl_progress(self, pct, msg):
+        if hasattr(self, '_ffmpeg_status'):
+            self._ffmpeg_status.setText(msg)
+
+    def _on_dl_done(self, ok):
+        if ok:
+            Toast.success(self, "FFmpeg 下载成功！现在可以裁切视频了")
+            if hasattr(self, '_ffmpeg_btn'):
+                self._ffmpeg_btn.setText("✅ FFmpeg 已安装")
+                self._ffmpeg_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: #00B42A;
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        padding: 8px 16px;
+                        font-size: 13px;
+                    }}
+                """)
+        else:
+            Toast.error(self, "FFmpeg 下载失败，请手动安装")
+            if hasattr(self, '_ffmpeg_btn'):
+                self._ffmpeg_btn.setEnabled(True)
+                self._ffmpeg_btn.setText("⬇️ 重新下载 FFmpeg")
+        if hasattr(self, '_ffmpeg_status'):
+            self._ffmpeg_status.setText("")
 
     def load_data(self):
         """Load video library."""

@@ -1,11 +1,14 @@
-"""Local FFmpeg video processing utilities."""
+"""Local FFmpeg video processing utilities with auto-download."""
 
 import os
 import subprocess
 import json
 import shutil
+import zipfile
+import io
 from pathlib import Path
 from datetime import datetime
+from urllib.request import urlopen, Request
 
 # Debug logging
 _debug_log_path = os.path.join(os.path.expanduser('~'), '.video-matrix', 'debug.log')
@@ -20,18 +23,27 @@ def _debug_log(msg: str):
         pass
 
 
-# FFmpeg binary path - check common locations
+# Local FFmpeg directory
+LOCAL_FFMPEG_DIR = Path.home() / '.video-matrix' / 'ffmpeg'
+
+
 def _find_ffmpeg() -> str:
     """Find FFmpeg binary path."""
     _debug_log("[FFmpeg] 开始查找 ffmpeg...")
-    
-    # Check if ffmpeg is in PATH via shutil.which
+
+    # 1. Check local downloaded copy first
+    local_ffmpeg = LOCAL_FFMPEG_DIR / 'ffmpeg.exe'
+    if local_ffmpeg.exists():
+        _debug_log(f"[FFmpeg] 找到本地 ffmpeg: {local_ffmpeg}")
+        return str(local_ffmpeg)
+
+    # 2. Check if ffmpeg is in PATH
     found = shutil.which('ffmpeg')
     if found:
         _debug_log(f"[FFmpeg] 在 PATH 中找到 ffmpeg: {found}")
         return found
-    
-    # Check common Windows locations
+
+    # 3. Check common Windows locations
     common_paths = [
         os.path.join(os.environ.get('PROGRAMFILES', ''), 'ffmpeg', 'bin', 'ffmpeg.exe'),
         os.path.join(os.environ.get('PROGRAMFILES(X86)', ''), 'ffmpeg', 'bin', 'ffmpeg.exe'),
@@ -44,74 +56,166 @@ def _find_ffmpeg() -> str:
         if p and os.path.exists(p):
             _debug_log(f"[FFmpeg] 在常见路径找到 ffmpeg: {p}")
             return p
-    
-    # Check local directory
+
+    # 4. Check app directory
     local = Path(__file__).parent.parent / 'ffmpeg' / 'ffmpeg.exe'
     if local.exists():
-        _debug_log(f"[FFmpeg] 在本地目录找到 ffmpeg: {local}")
+        _debug_log(f"[FFmpeg] 在应用目录找到 ffmpeg: {local}")
         return str(local)
-    
-    _debug_log("[FFmpeg] 未找到 ffmpeg，将尝试使用 'ffmpeg' 命令")
-    return 'ffmpeg'
 
-
-_ffmpeg = None
-
-def get_ffmpeg() -> str:
-    global _ffmpeg
-    if _ffmpeg is None:
-        _ffmpeg = _find_ffmpeg()
-    return _ffmpeg
+    _debug_log("[FFmpeg] 未找到 ffmpeg")
+    return ''
 
 
 def _find_ffprobe() -> str:
     """Find ffprobe binary path."""
     _debug_log("[FFmpeg] 开始查找 ffprobe...")
-    
-    # Check if ffprobe is in PATH via shutil.which
+
+    # 1. Check local downloaded copy first
+    local_ffprobe = LOCAL_FFMPEG_DIR / 'ffprobe.exe'
+    if local_ffprobe.exists():
+        _debug_log(f"[FFmpeg] 找到本地 ffprobe: {local_ffprobe}")
+        return str(local_ffprobe)
+
+    # 2. Check if ffprobe is in PATH
     found = shutil.which('ffprobe')
     if found:
         _debug_log(f"[FFmpeg] 在 PATH 中找到 ffprobe: {found}")
         return found
-    
-    # Try replacing ffmpeg with ffprobe in the found ffmpeg path
-    ffmpeg_path = get_ffmpeg()
-    if ffmpeg_path and ffmpeg_path != 'ffmpeg':
-        ffprobe_path = ffmpeg_path.replace('ffmpeg', 'ffprobe')
-        if ffprobe_path != ffmpeg_path and os.path.exists(ffprobe_path):
-            _debug_log(f"[FFmpeg] 通过 ffmpeg 路径推导出 ffprobe: {ffprobe_path}")
+
+    # 3. Try from ffmpeg location
+    ffmpeg_path = _find_ffmpeg()
+    if ffmpeg_path and os.path.exists(ffmpeg_path):
+        ffprobe_path = os.path.join(os.path.dirname(ffmpeg_path), 'ffprobe.exe')
+        if os.path.exists(ffprobe_path):
+            _debug_log(f"[FFmpeg] 通过 ffmpeg 路径找到 ffprobe: {ffprobe_path}")
             return ffprobe_path
-    
-    # Check common Windows locations
-    common_paths = [
-        os.path.join(os.environ.get('PROGRAMFILES', ''), 'ffmpeg', 'bin', 'ffprobe.exe'),
-        os.path.join(os.environ.get('PROGRAMFILES(X86)', ''), 'ffmpeg', 'bin', 'ffprobe.exe'),
-        os.path.join(os.path.expanduser('~'), 'ffmpeg', 'bin', 'ffprobe.exe'),
-        os.path.join(os.path.expanduser('~'), 'AppData', 'Local', 'ffmpeg', 'bin', 'ffprobe.exe'),
-        r'C:\ffmpeg\bin\ffprobe.exe',
-        r'D:\ffmpeg\bin\ffprobe.exe',
-    ]
-    for p in common_paths:
-        if p and os.path.exists(p):
-            _debug_log(f"[FFmpeg] 在常见路径找到 ffprobe: {p}")
-            return p
-    
-    # Check local directory
-    local = Path(__file__).parent.parent / 'ffmpeg' / 'ffprobe.exe'
-    if local.exists():
-        _debug_log(f"[FFmpeg] 在本地目录找到 ffprobe: {local}")
-        return str(local)
-    
-    _debug_log("[FFmpeg] 未找到 ffprobe，将尝试使用 'ffprobe' 命令")
-    return 'ffprobe'
+
+    _debug_log("[FFmpeg] 未找到 ffprobe")
+    return ''
+
+
+def is_ffmpeg_available() -> bool:
+    """Check if FFmpeg is available."""
+    return bool(_find_ffmpeg() and _find_ffprobe())
+
+
+def download_ffmpeg(progress_callback=None) -> bool:
+    """Download FFmpeg essentials (ffmpeg.exe + ffprobe.exe) from GitHub.
+
+    Args:
+        progress_callback: Optional function(percent, message) for progress updates
+
+    Returns:
+        True if download succeeded, False otherwise
+    """
+    _debug_log("[FFmpeg] 开始下载 FFmpeg...")
+    LOCAL_FFMPEG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use a lightweight FFmpeg Windows build from GitHub
+    # This is the essentials build (~30MB)
+    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+
+    try:
+        if progress_callback:
+            progress_callback(0, "正在下载 FFmpeg...")
+
+        _debug_log(f"[FFmpeg] 下载地址: {url}")
+        req = Request(url, headers={'User-Agent': 'VideoMatrix/1.0'})
+
+        # Download with progress
+        response = urlopen(req, timeout=120)
+        total_size = int(response.headers.get('Content-Length', 0))
+        downloaded = 0
+        chunks = []
+
+        while True:
+            chunk = response.read(8192)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            downloaded += len(chunk)
+            if total_size > 0 and progress_callback:
+                percent = int(downloaded * 100 / total_size)
+                progress_callback(min(percent, 90), f"正在下载 FFmpeg... {percent}%")
+
+        if progress_callback:
+            progress_callback(90, "正在解压 FFmpeg...")
+
+        _debug_log(f"[FFmpeg] 下载完成，大小: {downloaded} 字节，正在解压...")
+
+        # Extract ffmpeg.exe and ffprobe.exe
+        data = b''.join(chunks)
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for name in zf.namelist():
+                if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
+                    # Extract to local dir
+                    basename = os.path.basename(name)
+                    target = LOCAL_FFMPEG_DIR / basename
+                    with zf.open(name) as src, open(target, 'wb') as dst:
+                        dst.write(src.read())
+                    _debug_log(f"[FFmpeg] 解压: {basename}")
+
+        if progress_callback:
+            progress_callback(100, "FFmpeg 安装完成!")
+
+        _debug_log("[FFmpeg] FFmpeg 下载安装成功")
+        return True
+
+    except Exception as e:
+        _debug_log(f"[FFmpeg] 下载失败: {e}")
+        if progress_callback:
+            progress_callback(0, f"下载失败: {e}")
+        return False
+
+
+_ffmpeg_path = None
+_ffprobe_path = None
+
+def get_ffmpeg() -> str:
+    global _ffmpeg_path
+    if _ffmpeg_path is None:
+        _ffmpeg_path = _find_ffmpeg()
+    return _ffmpeg_path
+
+
+def get_ffprobe() -> str:
+    global _ffprobe_path
+    if _ffprobe_path is None:
+        _ffprobe_path = _find_ffprobe()
+    return _ffprobe_path
+
+
+def ensure_ffmpeg(progress_callback=None) -> bool:
+    """Ensure FFmpeg is available, download if needed.
+
+    Returns:
+        True if FFmpeg is available (either found or downloaded)
+    """
+    global _ffmpeg_path, _ffprobe_path
+
+    if is_ffmpeg_available():
+        return True
+
+    _debug_log("[FFmpeg] FFmpeg 未找到，尝试自动下载...")
+    if download_ffmpeg(progress_callback):
+        # Refresh paths
+        _ffmpeg_path = _find_ffmpeg()
+        _ffprobe_path = _find_ffprobe()
+        return is_ffmpeg_available()
+
+    return False
 
 
 def get_duration(file_path: str) -> float:
     """Get video duration in seconds."""
-    ffprobe = _find_ffprobe()
+    ffprobe = get_ffprobe()
+    if not ffprobe:
+        raise RuntimeError("找不到 ffprobe 程序，请在设置中点击「下载 FFmpeg」或手动安装")
+
     _debug_log(f"[FFmpeg] 获取视频时长: {file_path}")
     _debug_log(f"[FFmpeg] 使用 ffprobe: {ffprobe}")
-    
+
     try:
         result = subprocess.run(
             [ffprobe, '-v', 'quiet', '-print_format', 'json', '-show_format', file_path],
@@ -125,12 +229,11 @@ def get_duration(file_path: str) -> float:
         duration = float(info['format']['duration'])
         _debug_log(f"[FFmpeg] 视频时长: {duration}秒")
         return duration
-    except FileNotFoundError as e:
-        _debug_log(f"[FFmpeg] ffprobe 未找到: {e}")
-        raise RuntimeError(f"找不到 ffprobe 程序 ({ffprobe})，请确保已安装 FFmpeg 并添加到 PATH")
+    except FileNotFoundError:
+        _debug_log(f"[FFmpeg] ffprobe 未找到: {ffprobe}")
+        raise RuntimeError("找不到 ffprobe 程序，请在设置中点击「下载 FFmpeg」或手动安装")
     except (json.JSONDecodeError, KeyError) as e:
         _debug_log(f"[FFmpeg] 解析视频信息失败: {e}")
-        _debug_log(f"[FFmpeg] ffprobe stdout: {result.stdout[:300]}")
         raise RuntimeError(f"解析视频信息失败: {e}")
     except subprocess.TimeoutExpired:
         _debug_log("[FFmpeg] ffprobe 超时")
@@ -141,14 +244,15 @@ def get_duration(file_path: str) -> float:
 
 
 def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = None) -> list:
-    """Cut a video into equal segments using stream copy (fast, no re-encoding).
-
-    Returns list of output file paths.
-    """
+    """Cut a video into equal segments using stream copy (fast, no re-encoding)."""
     _debug_log(f"[FFmpeg] 开始裁切: {file_path}, 段数: {segments}")
-    
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"视频文件不存在: {file_path}")
+
+    ffmpeg = get_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("找不到 ffmpeg 程序，请在设置中点击「下载 FFmpeg」或手动安装")
 
     duration = get_duration(file_path)
     if duration <= 0:
@@ -162,11 +266,9 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
     ext = Path(file_path).suffix
     seg_duration = duration / segments
     outputs = []
-    ffmpeg = get_ffmpeg()
 
     for i in range(segments):
         start = i * seg_duration
-        # Generate output filename
         name = name_rule.replace('{原名}', base_name).replace('{序号}', str(i + 1))
         if '{' in name:
             name = f"{base_name}_片段{i + 1}"
@@ -177,12 +279,12 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
             '-ss', str(start),
             '-i', file_path,
             '-t', str(seg_duration),
-            '-c', 'copy',  # Stream copy - no re-encoding
+            '-c', 'copy',
             '-avoid_negative_ts', 'make_zero',
             out_path
         ]
 
-        _debug_log(f"[FFmpeg] 裁切第 {i+1} 段: {' '.join(cmd[:6])}...")
+        _debug_log(f"[FFmpeg] 裁切第 {i+1} 段...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
             _debug_log(f"[FFmpeg] 裁切失败: {result.stderr[:300]}")
@@ -196,23 +298,22 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
 
 
 def mix_videos(video_paths: list, output_path: str, bg_audio: str = None, volume: int = 50) -> str:
-    """Concatenate multiple video clips into one.
-
-    Returns output file path.
-    """
+    """Concatenate multiple video clips into one."""
     if not video_paths:
         raise ValueError("没有要混剪的视频")
+
+    ffmpeg = get_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("找不到 ffmpeg 程序，请在设置中点击「下载 FFmpeg」或手动安装")
 
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Create concat list file
     list_file = os.path.join(output_dir, '_concat_list.txt')
     with open(list_file, 'w', encoding='utf-8') as f:
         for vp in video_paths:
             f.write(f"file '{os.path.abspath(vp)}'\n")
 
-    ffmpeg = get_ffmpeg()
     cmd = [ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', list_file]
 
     if bg_audio and bg_audio != '无' and os.path.exists(bg_audio):
