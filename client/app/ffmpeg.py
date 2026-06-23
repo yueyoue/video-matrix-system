@@ -101,12 +101,16 @@ def is_ffmpeg_available() -> bool:
     if not ffprobe or not os.path.exists(ffprobe):
         return False
     try:
+        use_shell = os.name == 'nt'
         result = subprocess.run(
             [ffprobe, '-version'],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
+            shell=use_shell,
+            creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0
         )
         return result.returncode == 0 and 'ffprobe' in (result.stdout or '')
-    except Exception:
+    except Exception as e:
+        _debug_log(f"[FFmpeg] ffprobe 验证失败: {e}")
         return False
 
 
@@ -227,9 +231,13 @@ def get_duration(file_path: str) -> float:
     _debug_log(f"[FFmpeg] 使用 ffprobe: {ffprobe}")
 
     try:
+        # On Windows, use shell=True for better compatibility
+        use_shell = os.name == 'nt'
         result = subprocess.run(
             [ffprobe, '-v', 'quiet', '-print_format', 'json', '-show_format', file_path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30,
+            shell=use_shell,
+            creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0
         )
         _debug_log(f"[FFmpeg] ffprobe 返回码: {result.returncode}")
         _debug_log(f"[FFmpeg] ffprobe stdout: {(result.stdout or '')[:300]}")
@@ -299,7 +307,10 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
         ]
 
         _debug_log(f"[FFmpeg] 裁切第 {i+1} 段...")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        use_shell = os.name == 'nt'
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                                shell=use_shell,
+                                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
             _debug_log(f"[FFmpeg] 裁切失败: {result.stderr[:300]}")
             raise RuntimeError(f"裁切失败: {result.stderr[:200]}")
@@ -337,7 +348,10 @@ def mix_videos(video_paths: list, output_path: str, bg_audio: str = None, volume
     cmd.extend(['-c', 'copy', output_path])
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        use_shell = os.name == 'nt'
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                                shell=use_shell,
+                                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
             raise RuntimeError(f"混剪失败: {result.stderr[:200]}")
     finally:
