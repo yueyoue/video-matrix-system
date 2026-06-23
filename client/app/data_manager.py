@@ -335,6 +335,9 @@ def create_mix_task(basket_id: str, segments_per_video: int = 1, auto: bool = Tr
     # 按最少段数来
     min_clips = min(len(clips_by_source[s]) for s in sources) if sources else 0
 
+    # 确保至少取1段
+    if segments_per_video < 1:
+        segments_per_video = 1
     if segments_per_video > min_clips:
         segments_per_video = min_clips
 

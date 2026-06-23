@@ -100,12 +100,17 @@ class _MixWorker(QThread):
             dm.update_mix_task_progress(self.task_id, 0, "running")
             basket_id = task["basket_id"]
             segments_per_video = task.get("segments_per_video", 1)
+            if segments_per_video < 1:
+                segments_per_video = 1
             clips_by_src = dm.get_basket_clips_by_source(basket_id)
             sources = sorted(clips_by_src.keys())
             if not sources:
                 dm.update_mix_task_progress(self.task_id, 0, "error")
                 self.failed.emit("篮子中没有片段，请先完成裁切"); return
             min_clips = min(len(clips_by_src[s]) for s in sources)
+            if min_clips < 1:
+                dm.update_mix_task_progress(self.task_id, 0, "error")
+                self.failed.emit("篮子中没有可用片段"); return
             if segments_per_video > min_clips:
                 segments_per_video = min_clips
             from itertools import product
@@ -558,7 +563,8 @@ class VideoView(QWidget):
         if not vids: Toast.warning(self, "请勾选视频"); return
         gname = self._group_name.text().strip()
         mode = "segments" if self._cut_mode.currentIndex() == 0 else "duration"
-        group = dm.create_cut_group(vids, mode, self._cut_val.value(), self._mix_seg.value(), gname)
+        mix_seg = max(1, self._mix_seg.value())
+        group = dm.create_cut_group(vids, mode, self._cut_val.value(), mix_seg, gname)
         dm.create_mix_task(group["basket_id"], self._mix_seg.value())
         Toast.success(self, f"已创建裁切组「{group['name']}」")
         self._group_name.clear()
