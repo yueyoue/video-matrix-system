@@ -876,6 +876,7 @@ class VideoView(QWidget):
         bar.addWidget(_make_btn("✂️ 添加到裁切队列", BTN_PRIMARY, self._add_to_cut))
         bar.addStretch()
         bar.addWidget(_make_btn("🗑️ 清空全部", BTN_DANGER, self._library_clear_all))
+        bar.addWidget(_make_btn("⬇️ FFmpeg", BTN_DEFAULT, self._check_ffmpeg))
         bar.addWidget(_make_btn("🔄 刷新", BTN_DEFAULT, self._refresh_library))
         layout.addLayout(bar)
         self._lib_table = QTableWidget()
@@ -884,7 +885,9 @@ class VideoView(QWidget):
         self._lib_table.setHorizontalHeaderLabels(["☑", "文件名", "时长", "大小", "来源", "路径", "时间", "操作"])
         self._lib_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._lib_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._lib_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self._lib_table.setColumnWidth(0, 35)
+        self._lib_table.setColumnWidth(7, 90)
         self._lib_table.verticalHeader().setVisible(False)
         layout.addWidget(self._lib_table, 1)
         return tab
@@ -928,7 +931,9 @@ class VideoView(QWidget):
         self._cut_table.setHorizontalHeaderLabels(["☑", "组名", "视频数", "规则", "状态", "进度", "操作"])
         self._cut_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._cut_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._cut_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._cut_table.setColumnWidth(0, 35)
+        self._cut_table.setColumnWidth(6, 120)
         self._cut_table.verticalHeader().setVisible(False)
         layout.addWidget(self._cut_table, 1)
         return tab
@@ -1068,7 +1073,9 @@ class VideoView(QWidget):
         self._ai_table.setHorizontalHeaderLabels(["☑", "名称", "类型", "模型", "提示词", "路径", "操作"])
         self._ai_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._ai_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._ai_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._ai_table.setColumnWidth(0, 35)
+        self._ai_table.setColumnWidth(6, 90)
         self._ai_table.verticalHeader().setVisible(False)
         layout.addWidget(self._ai_table, 1)
         return tab
@@ -1196,7 +1203,9 @@ class VideoView(QWidget):
         self._mix_table.setHorizontalHeaderLabels(["☑", "篮子", "取几段", "组合数", "已完成", "状态", "操作"])
         self._mix_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._mix_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._mix_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         self._mix_table.setColumnWidth(0, 35)
+        self._mix_table.setColumnWidth(6, 150)
         self._mix_table.verticalHeader().setVisible(False)
         layout.addWidget(self._mix_table, 1)
         return tab
@@ -1230,7 +1239,9 @@ class VideoView(QWidget):
         self._pub_table.setHorizontalHeaderLabels(["☑", "文件名", "大小", "来源", "路径", "发布时间", "状态", "操作"])
         self._pub_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self._pub_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._pub_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self._pub_table.setColumnWidth(0, 35)
+        self._pub_table.setColumnWidth(7, 90)
         self._pub_table.verticalHeader().setVisible(False)
         layout.addWidget(self._pub_table, 1)
         return tab
@@ -1572,6 +1583,48 @@ class VideoView(QWidget):
     def _del_video(self, vid):
         if QMessageBox.question(self, "确认", "删除此视频？") == QMessageBox.StandardButton.Yes:
             dm.delete_video(vid); self._refresh_library()
+
+    def _check_ffmpeg(self):
+        """检查FFmpeg状态，未安装则下载"""
+        from .. import ffmpeg as ff
+        if ff.is_ffmpeg_available():
+            Toast.success(self, "✅ FFmpeg 已安装，无需重复安装")
+            return
+        # 未安装，弹窗确认后下载
+        reply = QMessageBox.question(
+            self, "FFmpeg 未安装",
+            "检测到系统未安装 FFmpeg，视频裁切功能需要 FFmpeg 支持。\n\n是否自动下载安装？（约30MB）",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        # 创建进度对话框
+        progress = QProgressBar(self)
+        progress.setRange(0, 100)
+        progress.setFixedWidth(300)
+        progress.move(self.width() // 2 - 150, self.height() // 2 - 10)
+        progress.show()
+        status_label = QLabel("正在下载 FFmpeg...", self)
+        status_label.move(self.width() // 2 - 100, self.height() // 2 + 10)
+        status_label.show()
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+        def _on_progress(percent, msg):
+            progress.setValue(percent)
+            status_label.setText(msg)
+            QApplication.processEvents()
+        ok = ff.download_ffmpeg(progress_callback=_on_progress)
+        progress.hide()
+        status_label.hide()
+        if ok:
+            ff._ffmpeg_path = None
+            ff._ffprobe_path = None
+            if ff.is_ffmpeg_available():
+                Toast.success(self, "✅ FFmpeg 安装成功!")
+            else:
+                Toast.error(self, "FFmpeg 安装后仍无法使用，请手动安装")
+        else:
+            Toast.error(self, "FFmpeg 下载失败，请检查网络或手动安装")
 
     def _library_clear_all(self):
         videos = dm.get_videos()
