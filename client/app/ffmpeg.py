@@ -284,6 +284,94 @@ def get_duration(file_path: str) -> float:
         raise RuntimeError(f"获取视频时长失败: {e}")
 
 
+def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name: str = None) -> list:
+    """将视频平均分成N段，返回输出文件路径列表"""
+    _debug_log(f"[FFmpeg] 按段数裁切: {file_path}, 段数: {segments}")
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"视频文件不存在: {file_path}")
+
+    ffmpeg_path = get_ffmpeg()
+    if not ffmpeg_path:
+        raise RuntimeError("找不到 ffmpeg 程序")
+
+    duration = get_duration(file_path)
+    if duration <= 0:
+        raise ValueError("无法获取视频时长")
+
+    os.makedirs(output_dir, exist_ok=True)
+    if base_name is None:
+        base_name = Path(file_path).stem
+    ext = Path(file_path).suffix
+    seg_duration = duration / segments
+    outputs = []
+
+    for i in range(segments):
+        start = i * seg_duration
+        out_name = f"{base_name}_{i+1}{ext}"
+        out_path = os.path.join(output_dir, out_name)
+
+        cmd = [ffmpeg_path, '-y', '-ss', str(start), '-i', file_path,
+               '-t', str(seg_duration), '-c', 'copy',
+               '-avoid_negative_ts', 'make_zero', out_path]
+
+        use_shell = os.name == 'nt'
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                                shell=use_shell,
+                                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
+        if result.returncode != 0:
+            raise RuntimeError(f"裁切失败: {(result.stderr or '')[:200]}")
+        outputs.append(out_path)
+
+    _debug_log(f"[FFmpeg] 裁切完成，共 {len(outputs)} 个片段")
+    return outputs
+
+
+def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: str, base_name: str = None) -> list:
+    """按时长裁切视频（每N秒一段），返回输出文件路径列表"""
+    _debug_log(f"[FFmpeg] 按时长裁切: {file_path}, 每段{segment_duration}秒")
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"视频文件不存在: {file_path}")
+
+    ffmpeg_path = get_ffmpeg()
+    if not ffmpeg_path:
+        raise RuntimeError("找不到 ffmpeg 程序")
+
+    duration = get_duration(file_path)
+    if duration <= 0:
+        raise ValueError("无法获取视频时长")
+
+    os.makedirs(output_dir, exist_ok=True)
+    if base_name is None:
+        base_name = Path(file_path).stem
+    ext = Path(file_path).suffix
+    outputs = []
+    start = 0
+    segment_num = 1
+
+    while start < duration:
+        out_name = f"{base_name}_{segment_num}{ext}"
+        out_path = os.path.join(output_dir, out_name)
+
+        cmd = [ffmpeg_path, '-y', '-ss', str(start), '-i', file_path,
+               '-t', str(segment_duration), '-c', 'copy',
+               '-avoid_negative_ts', 'make_zero', out_path]
+
+        use_shell = os.name == 'nt'
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                                shell=use_shell,
+                                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
+        if result.returncode != 0:
+            raise RuntimeError(f"裁切失败: {(result.stderr or '')[:200]}")
+        outputs.append(out_path)
+        start += segment_duration
+        segment_num += 1
+
+    _debug_log(f"[FFmpeg] 裁切完成，共 {len(outputs)} 个片段")
+    return outputs
+
+
 def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = None) -> list:
     """Cut a video into equal segments using stream copy (fast, no re-encoding)."""
     _debug_log(f"[FFmpeg] 开始裁切: {file_path}, 段数: {segments}")
