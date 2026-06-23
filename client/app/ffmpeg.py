@@ -96,8 +96,18 @@ def _find_ffprobe() -> str:
 
 
 def is_ffmpeg_available() -> bool:
-    """Check if FFmpeg is available."""
-    return bool(_find_ffmpeg() and _find_ffprobe())
+    """Check if FFmpeg is actually working (not just file exists)."""
+    ffprobe = _find_ffprobe()
+    if not ffprobe or not os.path.exists(ffprobe):
+        return False
+    try:
+        result = subprocess.run(
+            [ffprobe, '-version'],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0 and 'ffprobe' in (result.stdout or '')
+    except Exception:
+        return False
 
 
 def download_ffmpeg(progress_callback=None) -> bool:
@@ -222,9 +232,12 @@ def get_duration(file_path: str) -> float:
             capture_output=True, text=True, timeout=30
         )
         _debug_log(f"[FFmpeg] ffprobe 返回码: {result.returncode}")
+        _debug_log(f"[FFmpeg] ffprobe stdout: {(result.stdout or '')[:300]}")
+        _debug_log(f"[FFmpeg] ffprobe stderr: {(result.stderr or '')[:300]}")
         if result.returncode != 0:
-            _debug_log(f"[FFmpeg] ffprobe stderr: {result.stderr[:300]}")
-            raise RuntimeError(f"ffprobe 返回错误 (code {result.returncode}): {result.stderr[:200]}")
+            raise RuntimeError(f"ffprobe 返回错误 (code {result.returncode}): {(result.stderr or '')[:200]}")
+        if not result.stdout:
+            raise RuntimeError(f"ffprobe 没有输出，请检查文件是否存在: {file_path}")
         info = json.loads(result.stdout)
         duration = float(info['format']['duration'])
         _debug_log(f"[FFmpeg] 视频时长: {duration}秒")
@@ -232,8 +245,9 @@ def get_duration(file_path: str) -> float:
     except FileNotFoundError:
         _debug_log(f"[FFmpeg] ffprobe 未找到: {ffprobe}")
         raise RuntimeError("找不到 ffprobe 程序，请在设置中点击「下载 FFmpeg」或手动安装")
-    except (json.JSONDecodeError, KeyError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
         _debug_log(f"[FFmpeg] 解析视频信息失败: {e}")
+        _debug_log(f"[FFmpeg] ffprobe stdout: {(result.stdout or 'None')[:300]}")
         raise RuntimeError(f"解析视频信息失败: {e}")
     except subprocess.TimeoutExpired:
         _debug_log("[FFmpeg] ffprobe 超时")
