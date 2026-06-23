@@ -17,10 +17,11 @@ LIBRARY_DIR = BASE_DIR / 'library'
 BASKETS_DIR = BASE_DIR / 'baskets'
 MIXED_DIR = BASE_DIR / 'mixed'
 PUBLISH_DIR = BASE_DIR / 'pending_publish'
+AI_DIR = BASE_DIR / 'ai_assets'
 DB_FILE = BASE_DIR / 'db.json'
 
 # 确保目录存在
-for d in [LIBRARY_DIR, BASKETS_DIR, MIXED_DIR, PUBLISH_DIR]:
+for d in [LIBRARY_DIR, BASKETS_DIR, MIXED_DIR, PUBLISH_DIR, AI_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -614,3 +615,84 @@ def get_mixed_exported_count(task_id: str) -> int:
     """获取混剪任务已导出的视频数量"""
     db = _load_db()
     return sum(1 for v in db.get("pending_videos", []) if v.get("task_id") == task_id)
+
+
+# ══════════════════════════════════════════════════════════════
+# AI素材管理
+# ══════════════════════════════════════════════════════════════
+
+def save_ai_config(config: dict):
+    """保存AI模型配置"""
+    cfg_path = BASE_DIR / 'ai_config.json'
+    cfg_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def get_ai_config() -> dict:
+    """获取AI模型配置"""
+    cfg_path = BASE_DIR / 'ai_config.json'
+    if cfg_path.exists():
+        try:
+            return json.loads(cfg_path.read_text(encoding='utf-8'))
+        except Exception:
+            pass
+    return {}
+
+
+def add_ai_asset(asset: dict) -> dict:
+    """添加AI生成的素材"""
+    db = _load_db()
+    asset.setdefault("id", _gen_id())
+    asset.setdefault("created_at", _now())
+    db.setdefault("ai_assets", []).append(asset)
+    _save_db(db)
+    return asset
+
+
+def get_ai_assets() -> list:
+    """获取所有AI素材"""
+    db = _load_db()
+    return db.get("ai_assets", [])
+
+
+def get_ai_asset(asset_id: str) -> dict:
+    """获取单个AI素材"""
+    db = _load_db()
+    for a in db.get("ai_assets", []):
+        if a["id"] == asset_id:
+            return a
+    return None
+
+
+def delete_ai_asset(asset_id: str) -> bool:
+    """删除AI素材"""
+    db = _load_db()
+    asset = None
+    for a in db.get("ai_assets", []):
+        if a["id"] == asset_id:
+            asset = a
+            break
+    if not asset:
+        return False
+    path = asset.get("path", "")
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+    db["ai_assets"] = [a for a in db["ai_assets"] if a["id"] != asset_id]
+    _save_db(db)
+    return True
+
+
+def clear_ai_assets():
+    """清空所有AI素材"""
+    db = _load_db()
+    for a in db.get("ai_assets", []):
+        path = a.get("path", "")
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+    db["ai_assets"] = []
+    _save_db(db)

@@ -489,3 +489,63 @@ def add_subtitle(video_path: str, text: str, position: str = 'bottom'):
         os.replace(tmp_out, video_path)
     elif os.path.exists(tmp_out):
         os.remove(tmp_out)
+
+
+def insert_audio(video_path: str, audio_path: str, position: str = "head", fixed_time: float = 5):
+    """将音频插入到视频的指定位置
+    position: head(片头), tail(片尾), random(随机), fixed(固定时间点)
+    """
+    if not audio_path or not os.path.exists(audio_path):
+        return
+    ffmpeg_path = get_ffmpeg()
+    if not ffmpeg_path:
+        return
+
+    duration = get_duration(video_path)
+    audio_dur = 0
+    try:
+        audio_dur = get_duration(audio_path)
+    except Exception:
+        pass
+
+    tmp_out = video_path + '.audio.mp4'
+
+    if position == "head":
+        # 片头：音频放在视频开头
+        cmd = [ffmpeg_path, '-y', '-i', audio_path, '-i', video_path,
+               '-filter_complex',
+               f'[0:a]apad=pad_dur={duration}[a0];[1:a][a0]amix=inputs=2:duration=first:dropout_transition=0[aout]',
+               '-map', '1:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
+    elif position == "tail":
+        # 片尾：音频放在视频末尾
+        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+               '-filter_complex',
+               f'[0:a]apad=pad_dur={duration + audio_dur}[a0];[a0][1:a]amix=inputs=2:duration=longest:dropout_transition=0[aout]',
+               '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
+    elif position == "fixed":
+        # 固定时间点插入
+        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+               '-filter_complex',
+               f'[1:a]adelay={int(fixed_time*1000)}|{int(fixed_time*1000)}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]',
+               '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
+    else:
+        # random - 在随机时间点插入
+        import random as _rnd
+        rand_t = _rnd.uniform(1, max(1, duration - audio_dur - 1))
+        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+               '-filter_complex',
+               f'[1:a]adelay={int(rand_t*1000)}|{int(rand_t*1000)}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]',
+               '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
+
+    try:
+        use_shell = os.name == 'nt'
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                                shell=use_shell,
+                                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
+        if result.returncode == 0:
+            os.replace(tmp_out, video_path)
+        elif os.path.exists(tmp_out):
+            os.remove(tmp_out)
+    except Exception:
+        if os.path.exists(tmp_out):
+            os.remove(tmp_out)
