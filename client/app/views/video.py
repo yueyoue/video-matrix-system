@@ -880,6 +880,7 @@ class VideoView(QWidget):
         self._lib_table.setColumnWidth(0, 35)
         self._lib_table.setColumnWidth(7, 90)
         self._lib_table.verticalHeader().setVisible(False)
+        self._lib_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._lib_table, 1)
         return tab
 
@@ -927,6 +928,7 @@ class VideoView(QWidget):
         self._cut_table.setColumnWidth(0, 35)
         self._cut_table.setColumnWidth(6, 120)
         self._cut_table.verticalHeader().setVisible(False)
+        self._cut_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._cut_table, 1)
         return tab
 
@@ -962,6 +964,7 @@ class VideoView(QWidget):
         self._basket_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._basket_table.setColumnWidth(0, 35)
         self._basket_table.verticalHeader().setVisible(False)
+        self._basket_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._basket_table, 1)
         return tab
 
@@ -1070,6 +1073,7 @@ class VideoView(QWidget):
         self._ai_table.setColumnWidth(0, 35)
         self._ai_table.setColumnWidth(6, 90)
         self._ai_table.verticalHeader().setVisible(False)
+        self._ai_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._ai_table, 1)
         return tab
 
@@ -1201,6 +1205,7 @@ class VideoView(QWidget):
         self._mix_table.setColumnWidth(0, 35)
         self._mix_table.setColumnWidth(6, 150)
         self._mix_table.verticalHeader().setVisible(False)
+        self._mix_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._mix_table, 1)
         return tab
 
@@ -1238,6 +1243,7 @@ class VideoView(QWidget):
         self._pub_table.setColumnWidth(0, 35)
         self._pub_table.setColumnWidth(7, 90)
         self._pub_table.verticalHeader().setVisible(False)
+        self._pub_table.verticalHeader().setDefaultSectionSize(35)
         layout.addWidget(self._pub_table, 1)
         return tab
 
