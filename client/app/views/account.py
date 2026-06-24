@@ -1,4 +1,7 @@
-"""Account management view with platform tabs, table, and CRUD dialogs."""
+"""Account management view with platform tabs, table, and CRUD dialogs.
+
+集成 WebView 扫码登录 + 防封安全策略
+"""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -15,6 +18,7 @@ from ..styles.theme import (
 )
 from ..widgets.toast import Toast
 from .. import api
+from .. import anti_ban
 
 
 class _AccountWorker(QThread):
@@ -36,125 +40,80 @@ class _AccountWorker(QThread):
 
 
 class _AddAccountDialog(QDialog):
-    """Dialog for adding a new account with cookie-based login."""
+    """添加账号对话框 - 支持内嵌 WebView 扫码登录
+    
+    登录流程：
+    1. 输入昵称
+    2. 点击“扫码登录” → 弹出内嵌浏览器窗口
+    3. 用户在浏览器中扫码/登录
+    4. 登录成功 → 自动提取 Cookie 并保存
+    """
 
-    PLATFORM_URLS = {
-        "douyin": {
-            "name": "抖音",
-            "login_url": "https://creator.douyin.com/",
-            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
-        },
-        "kuaishou": {
-            "name": "快手",
-            "login_url": "https://cp.kuaishou.com/",
-            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
-        },
-        "xiaohongshu": {
-            "name": "小红书",
-            "login_url": "https://creator.xiaohongshu.com/",
-            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
-        },
-        "weixin": {
-            "name": "视频号",
-            "login_url": "https://channels.weixin.qq.com/",
-            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
-        },
+    PLATFORM_NAMES = {
+        "douyin": "抖音",
+        "kuaishou": "快手",
+        "xiaohongshu": "小红书",
+        "weixin": "视频号",
     }
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("添加账号")
-        self.setFixedSize(520, 580)
+        self.setWindowTitle("添加平台账号")
+        self.setFixedSize(500, 380)
         self.setStyleSheet(f"QDialog {{ background: {BG_COLOR}; }}")
+        self.result_data = None
+        self._cookies = ""
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
-        title = QLabel("添加平台账号")
+        # 标题
+        title = QLabel("➕ 添加平台账号")
         title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {TEXT_COLOR};")
         layout.addWidget(title)
 
+        # 表单
         form = QFormLayout()
         form.setSpacing(12)
 
-        # 平台选择
         self._platform = QComboBox()
-        self._platform.addItems(["抖音", "快手", "小红书", "视频号"])
+        self._platform.addItems(list(self.PLATFORM_NAMES.values()))
         self._platform.setStyleSheet(INPUT_STYLE)
-        self._platform.currentIndexChanged.connect(self._on_platform_changed)
         form.addRow("平台:", self._platform)
 
-        # 昵称
         self._nickname = QLineEdit()
-        self._nickname.setPlaceholderText("输入账号昵称")
+        self._nickname.setPlaceholderText("输入账号昵称（方便识别）")
         self._nickname.setStyleSheet(INPUT_STYLE)
         form.addRow("昵称:", self._nickname)
 
         layout.addLayout(form)
 
-        # 登录引导区域
-        self._login_guide = QFrame()
-        self._login_guide.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
-        guide_layout = QVBoxLayout(self._login_guide)
-        guide_layout.setSpacing(8)
+        # 登录方式说明
+        info_frame = QFrame()
+        info_frame.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
+        info_layout = QVBoxLayout(info_frame)
+        info_layout.setSpacing(8)
 
-        # 登录方式选择
-        login_mode_bar = QHBoxLayout()
-        login_mode_bar.addWidget(QLabel("登录方式: "))
-        self._login_mode = QComboBox()
-        self._login_mode.addItems(["Cookie登录（推荐）", "扫码登录"])  
-        self._login_mode.setStyleSheet(INPUT_STYLE)
-        self._login_mode.currentIndexChanged.connect(self._on_login_mode_changed)
-        login_mode_bar.addWidget(self._login_mode)
-        login_mode_bar.addStretch()
-        guide_layout.addLayout(login_mode_bar)
+        login_mode_label = QLabel("🔐 登录方式: 内嵌浏览器扫码登录")
+        login_mode_label.setStyleSheet(f"font-weight: 600; color: {TEXT_COLOR}; font-size: 13px;")
+        info_layout.addWidget(login_mode_label)
 
-        # Cookie输入区
-        self._cookie_widget = QWidget()
-        cookie_layout = QVBoxLayout(self._cookie_widget)
-        cookie_layout.setContentsMargins(0, 0, 0, 0)
-        cookie_layout.setSpacing(6)
+        desc = QLabel(
+            "• 点击“扫码登录”后将打开内嵌浏览器窗口\n"
+            "• 在浏览器中扫码或输入账号密码登录\n"
+            "• 每个账号使用独立浏览器环境，互不影响\n"
+            "• 登录成功后自动提取并保存 Cookie"
+        )
+        desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; line-height: 1.6;")
+        desc.setWordWrap(True)
+        info_layout.addWidget(desc)
 
-        self._login_url_label = QLabel()
-        self._login_url_label.setOpenExternalLinks(True)
-        self._login_url_label.setStyleSheet(f"color: {PRIMARY}; font-size: 12px;")
-        cookie_layout.addWidget(self._login_url_label)
+        self._cookie_status = QLabel("")
+        self._cookie_status.setStyleSheet(f"color: {SUCCESS}; font-size: 12px;")
+        info_layout.addWidget(self._cookie_status)
 
-        self._cookie_tip_label = QLabel()
-        self._cookie_tip_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-        self._cookie_tip_label.setWordWrap(True)
-        cookie_layout.addWidget(self._cookie_tip_label)
-
-        self._cookie_input = QTextEdit()
-        self._cookie_input.setPlaceholderText("粘贴从浏览器复制的Cookie...")
-        self._cookie_input.setStyleSheet(f"QTextEdit {{ border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 6px; font-size: 11px; }}")
-        self._cookie_input.setMaximumHeight(80)
-        cookie_layout.addWidget(self._cookie_input)
-
-        guide_layout.addWidget(self._cookie_widget)
-
-        # 扫码登录区
-        self._qrcode_widget = QWidget()
-        qr_layout = QVBoxLayout(self._qrcode_widget)
-        qr_layout.setContentsMargins(0, 0, 0, 0)
-        qr_layout.setSpacing(6)
-
-        qr_hint = QLabel("📱 点击下方按钮打开平台登录页面，扫码登录后复制Cookie粘贴到上方")
-        qr_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
-        qr_hint.setWordWrap(True)
-        qr_layout.addWidget(qr_hint)
-
-        open_browser_btn = QPushButton("🌐 打开登录页面")
-        open_browser_btn.setStyleSheet(BTN_PRIMARY_SM)
-        open_browser_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_browser_btn.clicked.connect(self._open_login_page)
-        qr_layout.addWidget(open_browser_btn)
-
-        self._qrcode_widget.setVisible(False)
-        guide_layout.addWidget(self._qrcode_widget)
-
-        layout.addWidget(self._login_guide)
+        layout.addWidget(info_frame)
 
         # 备注
         remark_form = QFormLayout()
@@ -168,55 +127,85 @@ class _AddAccountDialog(QDialog):
 
         # 按钮
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+
         cancel_btn = QPushButton("取消")
         cancel_btn.setStyleSheet(BTN_DEFAULT)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("保存")
-        save_btn.setStyleSheet(BTN_PRIMARY)
-        save_btn.clicked.connect(self._on_save)
-        btn_layout.addWidget(save_btn)
+        self._scan_btn = QPushButton("📱 扫码登录")
+        self._scan_btn.setStyleSheet(BTN_PRIMARY)
+        self._scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._scan_btn.clicked.connect(self._on_scan_login)
+        btn_layout.addWidget(self._scan_btn)
+
+        self._save_btn = QPushButton("✅ 保存")
+        self._save_btn.setStyleSheet(BTN_DEFAULT)
+        self._save_btn.setEnabled(False)
+        self._save_btn.clicked.connect(self._on_save)
+        btn_layout.addWidget(self._save_btn)
+
         layout.addLayout(btn_layout)
 
-        self.result_data = None
-        # 初始化平台提示
-        self._on_platform_changed(0)
-
-    def _on_platform_changed(self, idx):
-        platform_keys = ["douyin", "kuaishou", "xiaohongshu", "weixin"]
-        key = platform_keys[idx] if idx < len(platform_keys) else "douyin"
-        info = self.PLATFORM_URLS.get(key, {})
-        self._login_url_label.setText(f'🔗 <a href="{info.get("login_url", "#")}">{info.get("login_url", "")}</a>')
-        self._cookie_tip_label.setText(info.get("cookie_tip", ""))
-
-    def _on_login_mode_changed(self, idx):
-        self._cookie_widget.setVisible(idx == 0)
-        self._qrcode_widget.setVisible(idx == 1)
-
-    def _open_login_page(self):
-        platform_keys = ["douyin", "kuaishou", "xiaohongshu", "weixin"]
-        idx = self._platform.currentIndex()
-        key = platform_keys[idx] if idx < len(platform_keys) else "douyin"
-        url = self.PLATFORM_URLS.get(key, {}).get("login_url", "")
-        if url:
-            import webbrowser
-            webbrowser.open(url)
-
-    def _on_save(self):
+    def _get_platform_key(self) -> str:
+        """获取当前选择的平台 key"""
         platform_map = {"抖音": "douyin", "快手": "kuaishou",
                         "小红书": "xiaohongshu", "视频号": "weixin"}
-        nickname = self._nickname.text().strip()
-        cookie = self._cookie_input.toPlainText().strip()
+        return platform_map.get(self._platform.currentText(), "douyin")
 
+    def _on_scan_login(self):
+        """打开内嵌 WebView 扫码登录"""
+        nickname = self._nickname.text().strip()
+        if not nickname:
+            Toast.warning(self, "请先输入账号昵称")
+            return
+
+        # 检查防封：同平台登录频率
+        platform = self._get_platform_key()
+        allowed, reason = anti_ban.can_perform_operation(
+            f"{platform}_{nickname}", platform, "login"
+        )
+        if not allowed:
+            Toast.warning(self, f"安全限制: {reason}")
+            return
+
+        # 打开 WebView 登录窗口
+        try:
+            from .webview_login import WebViewLoginDialog
+            dlg = WebViewLoginDialog(platform, nickname, self)
+            dlg.login_success.connect(self._on_login_success)
+            dlg.exec()
+        except ImportError as e:
+            Toast.error(self, f"WebView 组件未安装: {e}\\n请安装 PyQt6-WebEngine")
+        except Exception as e:
+            Toast.error(self, f"打开登录窗口失败: {e}")
+
+    def _on_login_success(self, data: dict):
+        """WebView 登录成功回调"""
+        self._cookies = data.get("cookies", "")
+        count = data.get("cookie_count", 0)
+        self._cookie_status.setText(f"✅ Cookie 已获取 ({count} 个)")
+        self._cookie_status.setStyleSheet(f"color: {SUCCESS}; font-size: 12px; font-weight: 600;")
+        self._save_btn.setEnabled(True)
+        self._save_btn.setStyleSheet(BTN_PRIMARY)
+        self._scan_btn.setText("📱 重新扫码")
+        Toast.success(self, "登录成功！请点保存")
+
+    def _on_save(self):
+        nickname = self._nickname.text().strip()
         if not nickname:
             Toast.warning(self, "请输入昵称")
             return
+        if not self._cookies:
+            Toast.warning(self, "请先扫码登录获取 Cookie")
+            return
 
+        platform = self._get_platform_key()
         self.result_data = {
-            "platform": platform_map.get(self._platform.currentText(), "douyin"),
+            "platform": platform,
             "nickname": nickname,
-            "cookie": cookie,
+            "cookie": self._cookies,
             "remark": self._remark.text().strip(),
         }
         self.accept()
@@ -382,21 +371,31 @@ class AccountView(QWidget):
         self._load()
 
     def _load(self):
+        from ..api import _debug_log
+        _debug_log(f"[AccountView] 加载账号列表: platform={self._current_platform}, page={self._page}")
         w = _AccountWorker(api.get_accounts, self._current_platform, self._page)
         w.done.connect(self._on_data)
-        w.failed.connect(lambda m: Toast.error(self, f"加载失败: {m}"))
+        w.failed.connect(lambda m: (Toast.error(self, f"加载失败: {m}"), _debug_log(f"[AccountView] 加载失败: {m}")))
         self._workers.append(w)
         w.start()
 
     def _on_data(self, data: dict):
+        from ..api import _debug_log
+        _debug_log(f"[AccountView] 收到数据: {str(data)[:300]}")
         d = data.get("data", data)
         if isinstance(d, dict):
-            accounts = d.get("list", d.get("records", []))
+            accounts = d.get("list", d.get("records", d.get("accounts", [])))
             total = d.get("total", len(accounts))
             self._total_pages = max(1, (total + 19) // 20)
-        else:
-            accounts = d if isinstance(d, list) else []
+        elif isinstance(d, list):
+            accounts = d
             self._total_pages = 1
+        else:
+            accounts = []
+            self._total_pages = 1
+            _debug_log(f"[AccountView] 无法解析数据: type={type(d)}")
+
+        _debug_log(f"[AccountView] 账号数量: {len(accounts)}")
 
         self._table.setRowCount(len(accounts))
         for i, acc in enumerate(accounts):
@@ -468,13 +467,40 @@ class AccountView(QWidget):
             self._load()
 
     def _on_add_account(self):
+        # 检查登录状态
+        from ..auth import auth
+        if not auth.is_valid:
+            Toast.error(self, "请先登录系统，再添加账号")
+            return
         dlg = _AddAccountDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_data:
-            w = _AccountWorker(api.add_account, dlg.result_data)
-            w.done.connect(lambda _: (Toast.success(self, "账号添加成功"), self._load()))
+            data = dlg.result_data
+            # 验证必填字段
+            if not data.get("nickname"):
+                Toast.warning(self, "请输入账号昵称")
+                return
+            if not data.get("platform"):
+                Toast.warning(self, "请选择平台")
+                return
+            if not data.get("cookie"):
+                Toast.warning(self, "Cookie 为空，请先扫码登录")
+                return
+            # 防封检查：同平台同名账号是否已存在
+            platform = data["platform"]
+            nickname = data["nickname"]
+            from ..api import _debug_log
+            _debug_log(f"[AccountView] 添加账号: platform={platform}, nickname={nickname}")
+            # 显示正在添加的提示
+            Toast.info(self, f"正在添加 {nickname}...")
+            w = _AccountWorker(api.add_account, data)
+            w.done.connect(lambda r: self._on_add_success(r, nickname))
             w.failed.connect(lambda m: Toast.error(self, f"添加失败: {m}"))
             self._workers.append(w)
             w.start()
+
+    def _on_add_success(self, result, nickname):
+        Toast.success(self, f"账号 {nickname} 添加成功！")
+        self._load()
 
     def _on_edit(self, account: dict):
         dlg = _EditAccountDialog(account, self)

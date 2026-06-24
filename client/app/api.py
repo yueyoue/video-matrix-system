@@ -129,7 +129,16 @@ def get_accounts(platform: str = "", page: int = 1, page_size: int = 20) -> dict
 
 
 def add_account(data: dict) -> dict:
-    return _handle(requests.post(_api_url("/accounts"), headers=_headers(), json=data, timeout=_TIMEOUT))
+    _debug_log(f"[API] add_account: {str(data)[:200]}")
+    _debug_log(f"[API] add_account URL: {_api_url('/accounts')}")
+    _debug_log(f"[API] add_account headers: {_headers()}")
+    try:
+        result = _handle(requests.post(_api_url("/accounts"), headers=_headers(), json=data, timeout=_TIMEOUT))
+        _debug_log(f"[API] add_account 成功: {str(result)[:200]}")
+        return result
+    except Exception as e:
+        _debug_log(f"[API] add_account 失败: {type(e).__name__}: {e}")
+        raise
 
 
 def update_account(account_id: int, data: dict) -> dict:
