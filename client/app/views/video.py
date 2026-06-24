@@ -755,8 +755,8 @@ class AudioComboDialog(QDialog):
             self._list.setItem(i, 1, QTableWidgetItem(c.get("text", "")))
             self._list.setItem(i, 2, QTableWidgetItem(os.path.basename(c.get("audio", "")) or "--"))
             del_btn = QPushButton("删除")
-            del_btn.setStyleSheet(f"color: {DANGER}; border:none; font-size:12px;")
-            del_btn.setFixedHeight(26)
+            del_btn.setStyleSheet(f"color: {DANGER}; border:none; font-size:11px; padding:0px 4px;")
+            del_btn.setFixedHeight(28)
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             idx = i
             del_btn.clicked.connect(lambda _, ii=idx: (self.combos.pop(ii), self._refresh_list()))
@@ -773,9 +773,9 @@ class AudioComboDialog(QDialog):
 def _btn(text, color, callback):
     """快速创建操作按钮"""
     btn = QPushButton(text)
-    btn.setStyleSheet(f"color: {color}; border: none; font-size: 12px; padding: 2px 6px;")
+    btn.setStyleSheet(f"color: {color}; border: none; font-size: 11px; padding: 0px 4px;")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setFixedHeight(26)
+    btn.setFixedHeight(28)
     btn.clicked.connect(callback)
     return btn
 
@@ -882,7 +882,7 @@ class VideoView(QWidget):
         self._lib_table.setColumnWidth(0, 35)
         self._lib_table.setColumnWidth(7, 90)
         self._lib_table.verticalHeader().setVisible(False)
-        self._lib_table.verticalHeader().setDefaultSectionSize(35)
+        self._lib_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._lib_table, 1)
         return tab
 
@@ -930,7 +930,7 @@ class VideoView(QWidget):
         self._cut_table.setColumnWidth(0, 35)
         self._cut_table.setColumnWidth(6, 120)
         self._cut_table.verticalHeader().setVisible(False)
-        self._cut_table.verticalHeader().setDefaultSectionSize(35)
+        self._cut_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._cut_table, 1)
         return tab
 
@@ -966,7 +966,7 @@ class VideoView(QWidget):
         self._basket_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._basket_table.setColumnWidth(0, 35)
         self._basket_table.verticalHeader().setVisible(False)
-        self._basket_table.verticalHeader().setDefaultSectionSize(35)
+        self._basket_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._basket_table, 1)
         return tab
 
@@ -1075,7 +1075,7 @@ class VideoView(QWidget):
         self._ai_table.setColumnWidth(0, 35)
         self._ai_table.setColumnWidth(6, 90)
         self._ai_table.verticalHeader().setVisible(False)
-        self._ai_table.verticalHeader().setDefaultSectionSize(35)
+        self._ai_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._ai_table, 1)
         return tab
 
@@ -1207,7 +1207,7 @@ class VideoView(QWidget):
         self._mix_table.setColumnWidth(0, 35)
         self._mix_table.setColumnWidth(6, 150)
         self._mix_table.verticalHeader().setVisible(False)
-        self._mix_table.verticalHeader().setDefaultSectionSize(35)
+        self._mix_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._mix_table, 1)
         return tab
 
@@ -1245,7 +1245,7 @@ class VideoView(QWidget):
         self._pub_table.setColumnWidth(0, 35)
         self._pub_table.setColumnWidth(7, 90)
         self._pub_table.verticalHeader().setVisible(False)
-        self._pub_table.verticalHeader().setDefaultSectionSize(35)
+        self._pub_table.verticalHeader().setDefaultSectionSize(42)
         layout.addWidget(self._pub_table, 1)
         return tab
 
