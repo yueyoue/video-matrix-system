@@ -397,13 +397,14 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
         out_name = f"{base_name}_{i+1}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 使用 trim 滤镜精确裁切（最可靠的方案）
         # 自动检测硬件编码器（GPU优先，CPU回退）
         venc = detect_hw_encoder()
+        end = start + seg_duration
         cmd = [ffmpeg_path, '-y', '-i', file_path,
-               '-ss', str(start), '-t', str(seg_duration),
-               '-c:v', venc, '-c:a', 'aac',
-               '-avoid_negative_ts', 'make_zero', out_path]
+               '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
+               '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
+               '-c:v', venc, '-c:a', 'aac', out_path]
         # 硬件编码器需要额外参数
         if venc == 'h264_nvenc':
             cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
@@ -451,13 +452,14 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
         out_name = f"{base_name}_{segment_num}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 使用 trim 滤镜精确裁切（最可靠的方案）
         # 自动检测硬件编码器（GPU优先，CPU回退）
         venc = detect_hw_encoder()
+        end = start + actual_duration
         cmd = [ffmpeg_path, '-y', '-i', file_path,
-               '-ss', str(start), '-t', str(actual_duration),
-               '-c:v', venc, '-c:a', 'aac',
-               '-avoid_negative_ts', 'make_zero', out_path]
+               '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
+               '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
+               '-c:v', venc, '-c:a', 'aac', out_path]
         # 硬件编码器需要额外参数
         if venc == 'h264_nvenc':
             cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
@@ -509,16 +511,16 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
             name = f"{base_name}_片段{i + 1}"
         out_path = os.path.join(output_dir, f"{name}{ext}")
 
-        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 使用 trim 滤镜精确裁切（最可靠的方案）
         # 自动检测硬件编码器（GPU优先，CPU回退）
         venc = detect_hw_encoder()
+        end = start + seg_duration
         cmd = [
             ffmpeg, '-y',
             '-i', file_path,
-            '-ss', str(start),
-            '-t', str(seg_duration),
+            '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
+            '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
             '-c:v', venc, '-c:a', 'aac',
-            '-avoid_negative_ts', 'make_zero',
             out_path
         ]
         # 硬件编码器需要额外参数
