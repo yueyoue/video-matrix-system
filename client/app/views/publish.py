@@ -186,7 +186,7 @@ class PublishView(QWidget):
             for name, cb in self._plat_cbs.items():
                 # check if platform name or key is in the list
                 key_map = {"抖音": "douyin", "快手": "kuaishou",
-                           "小红书": "xiaohongshu", "视频号": "shipinhao"}
+                           "小红书": "xiaohongshu", "视频号": "weixin"}
                 cb.setChecked(key_map.get(name, name) in platforms or name in platforms)
 
             self._daily_limit.setValue(d.get("dailyLimit", d.get("dailyMax", 5)))
@@ -198,7 +198,7 @@ class PublishView(QWidget):
 
     def _on_save_rules(self):
         key_map = {"抖音": "douyin", "快手": "kuaishou",
-                   "小红书": "xiaohongshu", "视频号": "shipinhao"}
+                   "小红书": "xiaohongshu", "视频号": "weixin"}
         platforms = [key_map[n] for n, cb in self._plat_cbs.items() if cb.isChecked()]
         data = {
             "platforms": platforms,

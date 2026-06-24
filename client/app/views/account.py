@@ -5,13 +5,13 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QDialog,
     QLineEdit, QFormLayout, QComboBox, QCheckBox, QTabWidget,
-    QMessageBox, QSpinBox, QScrollArea
+    QMessageBox, QSpinBox, QScrollArea, QTextEdit
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
     DANGER, WARNING, BORDER_COLOR, TABLE_STYLE, BTN_PRIMARY, BTN_DEFAULT,
     BTN_DANGER, BTN_PRIMARY_SM, BTN_DANGER_TEXT, INPUT_STYLE, CHECKBOX_STYLE,
-    TAB_STYLE
+    TAB_STYLE, BTN_TEXT
 )
 from ..widgets.toast import Toast
 from .. import api
@@ -36,50 +36,137 @@ class _AccountWorker(QThread):
 
 
 class _AddAccountDialog(QDialog):
-    """Dialog for adding a new account."""
+    """Dialog for adding a new account with cookie-based login."""
+
+    PLATFORM_URLS = {
+        "douyin": {
+            "name": "抖音",
+            "login_url": "https://creator.douyin.com/",
+            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
+        },
+        "kuaishou": {
+            "name": "快手",
+            "login_url": "https://cp.kuaishou.com/",
+            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
+        },
+        "xiaohongshu": {
+            "name": "小红书",
+            "login_url": "https://creator.xiaohongshu.com/",
+            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
+        },
+        "weixin": {
+            "name": "视频号",
+            "login_url": "https://channels.weixin.qq.com/",
+            "cookie_tip": "1. 浏览器打开上方链接并登录\n2. 按F12打开开发者工具 → Network\n3. 刷新页面，点击任意请求\n4. 复制请求头中的Cookie值",
+        },
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("添加账号")
-        self.setFixedSize(400, 320)
+        self.setFixedSize(520, 580)
         self.setStyleSheet(f"QDialog {{ background: {BG_COLOR}; }}")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
 
-        title = QLabel("添加账号")
+        title = QLabel("添加平台账号")
         title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {TEXT_COLOR};")
         layout.addWidget(title)
 
         form = QFormLayout()
         form.setSpacing(12)
 
+        # 平台选择
         self._platform = QComboBox()
         self._platform.addItems(["抖音", "快手", "小红书", "视频号"])
         self._platform.setStyleSheet(INPUT_STYLE)
+        self._platform.currentIndexChanged.connect(self._on_platform_changed)
         form.addRow("平台:", self._platform)
 
+        # 昵称
         self._nickname = QLineEdit()
         self._nickname.setPlaceholderText("输入账号昵称")
         self._nickname.setStyleSheet(INPUT_STYLE)
         form.addRow("昵称:", self._nickname)
 
+        layout.addLayout(form)
+
+        # 登录引导区域
+        self._login_guide = QFrame()
+        self._login_guide.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px;}}")
+        guide_layout = QVBoxLayout(self._login_guide)
+        guide_layout.setSpacing(8)
+
+        # 登录方式选择
+        login_mode_bar = QHBoxLayout()
+        login_mode_bar.addWidget(QLabel("登录方式: "))
+        self._login_mode = QComboBox()
+        self._login_mode.addItems(["Cookie登录（推荐）", "扫码登录"])  
+        self._login_mode.setStyleSheet(INPUT_STYLE)
+        self._login_mode.currentIndexChanged.connect(self._on_login_mode_changed)
+        login_mode_bar.addWidget(self._login_mode)
+        login_mode_bar.addStretch()
+        guide_layout.addLayout(login_mode_bar)
+
+        # Cookie输入区
+        self._cookie_widget = QWidget()
+        cookie_layout = QVBoxLayout(self._cookie_widget)
+        cookie_layout.setContentsMargins(0, 0, 0, 0)
+        cookie_layout.setSpacing(6)
+
+        self._login_url_label = QLabel()
+        self._login_url_label.setOpenExternalLinks(True)
+        self._login_url_label.setStyleSheet(f"color: {PRIMARY}; font-size: 12px;")
+        cookie_layout.addWidget(self._login_url_label)
+
+        self._cookie_tip_label = QLabel()
+        self._cookie_tip_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        self._cookie_tip_label.setWordWrap(True)
+        cookie_layout.addWidget(self._cookie_tip_label)
+
+        self._cookie_input = QTextEdit()
+        self._cookie_input.setPlaceholderText("粘贴从浏览器复制的Cookie...")
+        self._cookie_input.setStyleSheet(f"QTextEdit {{ border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 6px; font-size: 11px; }}")
+        self._cookie_input.setMaximumHeight(80)
+        cookie_layout.addWidget(self._cookie_input)
+
+        guide_layout.addWidget(self._cookie_widget)
+
+        # 扫码登录区
+        self._qrcode_widget = QWidget()
+        qr_layout = QVBoxLayout(self._qrcode_widget)
+        qr_layout.setContentsMargins(0, 0, 0, 0)
+        qr_layout.setSpacing(6)
+
+        qr_hint = QLabel("📱 点击下方按钮打开平台登录页面，扫码登录后复制Cookie粘贴到上方")
+        qr_hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
+        qr_hint.setWordWrap(True)
+        qr_layout.addWidget(qr_hint)
+
+        open_browser_btn = QPushButton("🌐 打开登录页面")
+        open_browser_btn.setStyleSheet(BTN_PRIMARY_SM)
+        open_browser_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_browser_btn.clicked.connect(self._open_login_page)
+        qr_layout.addWidget(open_browser_btn)
+
+        self._qrcode_widget.setVisible(False)
+        guide_layout.addWidget(self._qrcode_widget)
+
+        layout.addWidget(self._login_guide)
+
+        # 备注
+        remark_form = QFormLayout()
         self._remark = QLineEdit()
         self._remark.setPlaceholderText("备注信息（可选）")
         self._remark.setStyleSheet(INPUT_STYLE)
-        form.addRow("备注:", self._remark)
-
-        layout.addLayout(form)
-
-        # scan code hint
-        hint = QLabel("📱 扫码登录：保存后将在浏览器中打开扫码页面")
-        hint.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        remark_form.addRow("备注:", self._remark)
+        layout.addLayout(remark_form)
 
         layout.addStretch()
 
+        # 按钮
         btn_layout = QHBoxLayout()
         cancel_btn = QPushButton("取消")
         cancel_btn.setStyleSheet(BTN_DEFAULT)
@@ -93,18 +180,45 @@ class _AddAccountDialog(QDialog):
         layout.addLayout(btn_layout)
 
         self.result_data = None
+        # 初始化平台提示
+        self._on_platform_changed(0)
+
+    def _on_platform_changed(self, idx):
+        platform_keys = ["douyin", "kuaishou", "xiaohongshu", "weixin"]
+        key = platform_keys[idx] if idx < len(platform_keys) else "douyin"
+        info = self.PLATFORM_URLS.get(key, {})
+        self._login_url_label.setText(f'🔗 <a href="{info.get("login_url", "#")}">{info.get("login_url", "")}</a>')
+        self._cookie_tip_label.setText(info.get("cookie_tip", ""))
+
+    def _on_login_mode_changed(self, idx):
+        self._cookie_widget.setVisible(idx == 0)
+        self._qrcode_widget.setVisible(idx == 1)
+
+    def _open_login_page(self):
+        platform_keys = ["douyin", "kuaishou", "xiaohongshu", "weixin"]
+        idx = self._platform.currentIndex()
+        key = platform_keys[idx] if idx < len(platform_keys) else "douyin"
+        url = self.PLATFORM_URLS.get(key, {}).get("login_url", "")
+        if url:
+            import webbrowser
+            webbrowser.open(url)
 
     def _on_save(self):
         platform_map = {"抖音": "douyin", "快手": "kuaishou",
-                        "小红书": "xiaohongshu", "视频号": "shipinhao"}
-        self.result_data = {
-            "platform": platform_map.get(self._platform.currentText(), "douyin"),
-            "nickname": self._nickname.text().strip(),
-            "remark": self._remark.text().strip(),
-        }
-        if not self.result_data["nickname"]:
+                        "小红书": "xiaohongshu", "视频号": "weixin"}
+        nickname = self._nickname.text().strip()
+        cookie = self._cookie_input.toPlainText().strip()
+
+        if not nickname:
             Toast.warning(self, "请输入昵称")
             return
+
+        self.result_data = {
+            "platform": platform_map.get(self._platform.currentText(), "douyin"),
+            "nickname": nickname,
+            "cookie": cookie,
+            "remark": self._remark.text().strip(),
+        }
         self.accept()
 
 
@@ -183,7 +297,7 @@ class AccountView(QWidget):
             ("douyin", "抖音"),
             ("kuaishou", "快手"),
             ("xiaohongshu", "小红书"),
-            ("shipinhao", "视频号"),
+            ("weixin", "视频号"),
         ]
         for key, label in self._tab_platforms:
             placeholder = QWidget()

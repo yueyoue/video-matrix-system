@@ -32,10 +32,10 @@ if (!$platform) _err_pc('缺少平台参数');
 if ($sub === 'reset' && $method === 'POST') {
     _admin_pc();
     $defaults = [
-        'douyin' => '{"creatorUrl":"https://creator.douyin.com/","cookieDays":30}',
-        'kuaishou' => '{"creatorUrl":"https://cp.kuaishou.com/","cookieDays":15}',
-        'xiaohongshu' => '{"creatorUrl":"https://creator.xiaohongshu.com/","cookieDays":7}',
-        'weixin' => '{"creatorUrl":"https://channels.weixin.qq.com/","cookieDays":30}',
+        'douyin' => '{"backendUrl":"https://creator.douyin.com/","verifyApi":"https://creator.douyin.com/api/creator/user/info","listApi":"https://creator.douyin.com/api/creator/content/list","publishApi":"https://creator.douyin.com/api/creator/content/publish","selector":".video-list-item","cookieExpire":30}',
+        'kuaishou' => '{"backendUrl":"https://cp.kuaishou.com/","verifyApi":"https://cp.kuaishou.com/rest/pc/author/info","listApi":"https://cp.kuaishou.com/rest/pc/works/list","publishApi":"https://cp.kuaishou.com/rest/pc/works/publish","selector":".work-item","cookieExpire":15}',
+        'xiaohongshu' => '{"backendUrl":"https://creator.xiaohongshu.com/","verifyApi":"https://creator.xiaohongshu.com/api/creator/user/info","listApi":"https://creator.xiaohongshu.com/api/creator/note/list","publishApi":"https://creator.xiaohongshu.com/api/creator/note/publish","selector":".note-item","cookieExpire":7}',
+        'weixin' => '{"backendUrl":"https://channels.weixin.qq.com/","verifyApi":"https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/get-finder-user-info","listApi":"https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/get-finder-feed","publishApi":"https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/post-finder-feed","selector":".feed-item","cookieExpire":30}',
     ];
     if (isset($defaults[$platform])) {
         $pdo->prepare("UPDATE " . _tbl_pc('platform_config') . " SET config_json = ? WHERE platform = ?")->execute([$defaults[$platform], $platform]);

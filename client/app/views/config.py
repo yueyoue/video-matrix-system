@@ -39,7 +39,7 @@ class ConfigView(QWidget):
         ("douyin", "抖音"),
         ("kuaishou", "快手"),
         ("xiaohongshu", "小红书"),
-        ("shipinhao", "视频号"),
+        ("weixin", "视频号"),
     ]
 
     def __init__(self, parent=None):
@@ -123,6 +123,12 @@ class ConfigView(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
+        default_btn = QPushButton("加载默认")
+        default_btn.setStyleSheet(BTN_DEFAULT)
+        default_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        default_btn.clicked.connect(lambda: self._on_load_default(platform_key))
+        btn_layout.addWidget(default_btn)
+
         reset_btn = QPushButton("恢复默认")
         reset_btn.setStyleSheet(BTN_DEFAULT)
         reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -189,3 +195,54 @@ class ConfigView(QWidget):
             w.failed.connect(lambda m: Toast.error(self, f"重置失败: {m}"))
             self._workers.append(w)
             w.start()
+
+    # 默认配置数据
+    DEFAULT_CONFIGS = {
+        "douyin": {
+            "backendUrl": "https://creator.douyin.com/",
+            "verifyApi": "https://creator.douyin.com/api/creator/user/info",
+            "listApi": "https://creator.douyin.com/api/creator/content/list",
+            "publishApi": "https://creator.douyin.com/api/creator/content/publish",
+            "selector": ".video-list-item",
+            "cookieExpire": 30,
+        },
+        "kuaishou": {
+            "backendUrl": "https://cp.kuaishou.com/",
+            "verifyApi": "https://cp.kuaishou.com/rest/pc/author/info",
+            "listApi": "https://cp.kuaishou.com/rest/pc/works/list",
+            "publishApi": "https://cp.kuaishou.com/rest/pc/works/publish",
+            "selector": ".work-item",
+            "cookieExpire": 15,
+        },
+        "xiaohongshu": {
+            "backendUrl": "https://creator.xiaohongshu.com/",
+            "verifyApi": "https://creator.xiaohongshu.com/api/creator/user/info",
+            "listApi": "https://creator.xiaohongshu.com/api/creator/note/list",
+            "publishApi": "https://creator.xiaohongshu.com/api/creator/note/publish",
+            "selector": ".note-item",
+            "cookieExpire": 7,
+        },
+        "weixin": {
+            "backendUrl": "https://channels.weixin.qq.com/",
+            "verifyApi": "https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/get-finder-user-info",
+            "listApi": "https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/get-finder-feed",
+            "publishApi": "https://channels.weixin.qq.com/cgi-bin/mmfinderfinder-bin/post-finder-feed",
+            "selector": ".feed-item",
+            "cookieExpire": 30,
+        },
+    }
+
+    def _on_load_default(self, platform_key: str):
+        """加载默认配置到表单（不保存到服务器）"""
+        defaults = self.DEFAULT_CONFIGS.get(platform_key, {})
+        if not defaults:
+            Toast.warning(self, f"暂无{platform_key}的默认配置")
+            return
+        fields = self._forms.get(platform_key, {})
+        for name, widget in fields.items():
+            val = defaults.get(name, "")
+            if isinstance(widget, QLineEdit):
+                widget.setText(str(val))
+            elif isinstance(widget, QSpinBox):
+                widget.setValue(int(val) if val else 7)
+        Toast.success(self, "已加载默认配置，请点击保存")

@@ -195,7 +195,7 @@ class AnalysisView(QWidget):
 
     def _get_params(self) -> dict:
         platform_map = {"全部": "", "抖音": "douyin", "快手": "kuaishou",
-                        "小红书": "xiaohongshu", "视频号": "shipinhao"}
+                        "小红书": "xiaohongshu", "视频号": "weixin"}
         platform = platform_map.get(self._platform_combo.currentText(), "")
         params = {
             "startDate": self._date_from.date().toString("yyyy-MM-dd"),

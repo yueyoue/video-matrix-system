@@ -847,6 +847,57 @@ class VideoView(QWidget):
         self._tabs.addTab(self._create_publish_tab(), "📤 待发布库")
         layout.addWidget(self._tabs)
 
+        # 启用视频库的拖放
+        self.setAcceptDrops(True)
+
+    def _toggle_all_checkboxes(self, table, logical_index):
+        """点击表头第0列时，切换该列所有QCheckBox的状态"""
+        if logical_index != 0:
+            return
+        # 检查当前是否全部选中
+        all_checked = True
+        for row in range(table.rowCount()):
+            cb = table.cellWidget(row, 0)
+            if isinstance(cb, QCheckBox) and not cb.isChecked():
+                all_checked = False
+                break
+        # 反转状态
+        new_state = not all_checked
+        for row in range(table.rowCount()):
+            cb = table.cellWidget(row, 0)
+            if isinstance(cb, QCheckBox):
+                cb.setChecked(new_state)
+
+    # ── 拖放支持 ─────────────────────────────────────────
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            # 检查是否有视频文件
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                ext = os.path.splitext(path)[1].lower()
+                if ext in ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            return
+        video_files = []
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if os.path.isfile(path):
+                ext = os.path.splitext(path)[1].lower()
+                if ext in ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'):
+                    video_files.append(path)
+        if video_files:
+            w = _UploadWorker(video_files)
+            w.done.connect(lambda r: (Toast.success(self, f"拖入{len(r['videos'])}个视频"), self._refresh_library()))
+            w.failed.connect(lambda m: Toast.error(self, f"导入失败: {m}"))
+            self._workers.append(w)
+            w.start()
+            event.acceptProposedAction()
+
     # ── 视频库 ─────────────────────────────────────────────
     def _create_library_tab(self):
         tab = QWidget(); layout = QVBoxLayout(tab); layout.setSpacing(12)
@@ -889,6 +940,7 @@ class VideoView(QWidget):
         self._lib_table.setColumnWidth(7, 90)
         self._lib_table.verticalHeader().setVisible(False)
         self._lib_table.verticalHeader().setDefaultSectionSize(42)
+        self._lib_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._lib_table, idx))
         layout.addWidget(self._lib_table, 1)
         return tab
 
@@ -945,6 +997,7 @@ class VideoView(QWidget):
         self._cut_table.setColumnWidth(6, 120)
         self._cut_table.verticalHeader().setVisible(False)
         self._cut_table.verticalHeader().setDefaultSectionSize(42)
+        self._cut_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._cut_table, idx))
         layout.addWidget(self._cut_table, 1)
         return tab
 
@@ -981,6 +1034,7 @@ class VideoView(QWidget):
         self._basket_table.setColumnWidth(0, 40)
         self._basket_table.verticalHeader().setVisible(False)
         self._basket_table.verticalHeader().setDefaultSectionSize(42)
+        self._basket_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._basket_table, idx))
         layout.addWidget(self._basket_table, 1)
         return tab
 
@@ -1090,6 +1144,7 @@ class VideoView(QWidget):
         self._ai_table.setColumnWidth(6, 90)
         self._ai_table.verticalHeader().setVisible(False)
         self._ai_table.verticalHeader().setDefaultSectionSize(42)
+        self._ai_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._ai_table, idx))
         layout.addWidget(self._ai_table, 1)
         return tab
 
@@ -1222,6 +1277,7 @@ class VideoView(QWidget):
         self._mix_table.setColumnWidth(6, 150)
         self._mix_table.verticalHeader().setVisible(False)
         self._mix_table.verticalHeader().setDefaultSectionSize(42)
+        self._mix_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._mix_table, idx))
         layout.addWidget(self._mix_table, 1)
         return tab
 
@@ -1260,6 +1316,7 @@ class VideoView(QWidget):
         self._pub_table.setColumnWidth(7, 90)
         self._pub_table.verticalHeader().setVisible(False)
         self._pub_table.verticalHeader().setDefaultSectionSize(42)
+        self._pub_table.horizontalHeader().sectionClicked.connect(lambda idx: self._toggle_all_checkboxes(self._pub_table, idx))
         layout.addWidget(self._pub_table, 1)
         return tab
 

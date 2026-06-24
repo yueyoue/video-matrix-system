@@ -115,7 +115,7 @@ def is_ffmpeg_available() -> bool:
 
 
 def download_ffmpeg(progress_callback=None) -> bool:
-    """Download FFmpeg essentials (ffmpeg.exe + ffprobe.exe) from GitHub.
+    """Download FFmpeg essentials (ffmpeg.exe + ffprobe.exe) with multiple mirror fallbacks.
 
     Args:
         progress_callback: Optional function(percent, message) for progress updates
@@ -126,61 +126,78 @@ def download_ffmpeg(progress_callback=None) -> bool:
     _debug_log("[FFmpeg] 开始下载 FFmpeg...")
     LOCAL_FFMPEG_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Use a lightweight FFmpeg Windows build from GitHub
-    # This is the essentials build (~30MB)
-    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    # 多个下载源，按优先级排列（国内镜像优先）
+    urls = [
+        # GitHub 直连（通过 ghproxy 代理加速）
+        "https://mirror.ghproxy.com/https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        # GitHub 直连
+        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+        # gyan.dev  essentials build
+        "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+        # 备用：GitHub release 版本
+        "https://mirror.ghproxy.com/https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-7.1.zip",
+    ]
 
-    try:
-        if progress_callback:
-            progress_callback(0, "正在下载 FFmpeg...")
+    last_error = None
+    for url_idx, url in enumerate(urls):
+        try:
+            if progress_callback:
+                source_name = "镜像加速" if "ghproxy" in url else ("gyan.dev" if "gyan" in url else "GitHub")
+                progress_callback(0, f"正在从 {source_name} 下载 FFmpeg... ({url_idx+1}/{len(urls)})")
 
-        _debug_log(f"[FFmpeg] 下载地址: {url}")
-        req = Request(url, headers={'User-Agent': 'VideoMatrix/1.0'})
+            _debug_log(f"[FFmpeg] 尝试下载源 {url_idx+1}: {url}")
+            req = Request(url, headers={'User-Agent': 'VideoMatrix/1.0'})
 
-        # Download with progress
-        response = urlopen(req, timeout=120)
-        total_size = int(response.headers.get('Content-Length', 0))
-        downloaded = 0
-        chunks = []
+            # Download with progress
+            response = urlopen(req, timeout=180)
+            total_size = int(response.headers.get('Content-Length', 0))
+            downloaded = 0
+            chunks = []
 
-        while True:
-            chunk = response.read(8192)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            downloaded += len(chunk)
-            if total_size > 0 and progress_callback:
-                percent = int(downloaded * 100 / total_size)
-                progress_callback(min(percent, 90), f"正在下载 FFmpeg... {percent}%")
+            while True:
+                chunk = response.read(8192)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                downloaded += len(chunk)
+                if total_size > 0 and progress_callback:
+                    percent = int(downloaded * 100 / total_size)
+                    progress_callback(min(percent, 90), f"正在下载 FFmpeg... {percent}%")
 
-        if progress_callback:
-            progress_callback(90, "正在解压 FFmpeg...")
+            if progress_callback:
+                progress_callback(90, "正在解压 FFmpeg...")
 
-        _debug_log(f"[FFmpeg] 下载完成，大小: {downloaded} 字节，正在解压...")
+            _debug_log(f"[FFmpeg] 下载完成，大小: {downloaded} 字节，正在解压...")
 
-        # Extract ffmpeg.exe and ffprobe.exe
-        data = b''.join(chunks)
-        with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            for name in zf.namelist():
-                if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
-                    # Extract to local dir
-                    basename = os.path.basename(name)
-                    target = LOCAL_FFMPEG_DIR / basename
-                    with zf.open(name) as src, open(target, 'wb') as dst:
-                        dst.write(src.read())
-                    _debug_log(f"[FFmpeg] 解压: {basename}")
+            # Extract ffmpeg.exe and ffprobe.exe
+            data = b''.join(chunks)
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                for name in zf.namelist():
+                    if name.endswith('ffmpeg.exe') or name.endswith('ffprobe.exe'):
+                        # Extract to local dir
+                        basename = os.path.basename(name)
+                        target = LOCAL_FFMPEG_DIR / basename
+                        with zf.open(name) as src, open(target, 'wb') as dst:
+                            dst.write(src.read())
+                        _debug_log(f"[FFmpeg] 解压: {basename}")
 
-        if progress_callback:
-            progress_callback(100, "FFmpeg 安装完成!")
+            if progress_callback:
+                progress_callback(100, "FFmpeg 安装完成!")
 
-        _debug_log("[FFmpeg] FFmpeg 下载安装成功")
-        return True
+            _debug_log("[FFmpeg] FFmpeg 下载安装成功")
+            return True
 
-    except Exception as e:
-        _debug_log(f"[FFmpeg] 下载失败: {e}")
-        if progress_callback:
-            progress_callback(0, f"下载失败: {e}")
-        return False
+        except Exception as e:
+            last_error = e
+            _debug_log(f"[FFmpeg] 下载源 {url_idx+1} 失败: {e}")
+            if progress_callback:
+                progress_callback(0, f"下载源 {url_idx+1} 失败，尝试下一个...")
+            continue
+
+    _debug_log(f"[FFmpeg] 所有下载源均失败，最后错误: {last_error}")
+    if progress_callback:
+        progress_callback(0, f"所有下载源均失败: {last_error}")
+    return False
 
 
 _ffmpeg_path = None
@@ -311,12 +328,14 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
         out_name = f"{base_name}_{i+1}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        cmd = [ffmpeg_path, '-y', '-ss', str(start), '-i', file_path,
-               '-t', str(seg_duration), '-c', 'copy',
+        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        cmd = [ffmpeg_path, '-y', '-i', file_path,
+               '-ss', str(start), '-t', str(seg_duration),
+               '-c:v', 'libx264', '-c:a', 'aac',
                '-avoid_negative_ts', 'make_zero', out_path]
 
         use_shell = os.name == 'nt'
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
@@ -351,15 +370,19 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
     segment_num = 1
 
     while start < duration:
+        # 计算本段实际时长（最后一段可能不足 segment_duration）
+        actual_duration = min(segment_duration, duration - start)
         out_name = f"{base_name}_{segment_num}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        cmd = [ffmpeg_path, '-y', '-ss', str(start), '-i', file_path,
-               '-t', str(segment_duration), '-c', 'copy',
+        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        cmd = [ffmpeg_path, '-y', '-i', file_path,
+               '-ss', str(start), '-t', str(actual_duration),
+               '-c:v', 'libx264', '-c:a', 'aac',
                '-avoid_negative_ts', 'make_zero', out_path]
 
         use_shell = os.name == 'nt'
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
@@ -403,12 +426,13 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
             name = f"{base_name}_片段{i + 1}"
         out_path = os.path.join(output_dir, f"{name}{ext}")
 
+        # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
         cmd = [
             ffmpeg, '-y',
-            '-ss', str(start),
             '-i', file_path,
+            '-ss', str(start),
             '-t', str(seg_duration),
-            '-c', 'copy',
+            '-c:v', 'libx264', '-c:a', 'aac',
             '-avoid_negative_ts', 'make_zero',
             out_path
         ]
