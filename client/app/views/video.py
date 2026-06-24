@@ -1295,8 +1295,20 @@ class VideoView(QWidget):
             ol = QHBoxLayout(ow); ol.setContentsMargins(4, 4, 4, 4); ol.setSpacing(6)
             gid = g["id"]
             if g.get("status") == "pending":
-                ol.addWidget(_btn("裁切", PRIMARY, lambda _, gg=gid: self._cut_one(gg)))
-            ol.addWidget(_btn("删除", DANGER, lambda _, gg=gid: self._del_cut(gg)))
+                cut_btn = QPushButton("✂️")
+                cut_btn.setStyleSheet(f"background:{PRIMARY};color:white;border:none;border-radius:4px;font-size:14px;")
+                cut_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                cut_btn.setFixedSize(28, 28)
+                cut_btn.setToolTip("裁切")
+                cut_btn.clicked.connect(lambda _, gg=gid: self._cut_one(gg))
+                ol.addWidget(cut_btn)
+            del_btn = QPushButton("🗑️")
+            del_btn.setStyleSheet(f"background:{DANGER};color:white;border:none;border-radius:4px;font-size:14px;")
+            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            del_btn.setFixedSize(28, 28)
+            del_btn.setToolTip("删除")
+            del_btn.clicked.connect(lambda _, gg=gid: self._del_cut(gg))
+            ol.addWidget(del_btn)
             ol.addStretch()
             self._cut_table.setCellWidget(i, 6, ow)
 
