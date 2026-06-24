@@ -202,6 +202,7 @@ def download_ffmpeg(progress_callback=None) -> bool:
 
 _ffmpeg_path = None
 _ffprobe_path = None
+_hw_encoder_cache = None  # 缓存硬件编码器检测结果
 
 def get_ffmpeg() -> str:
     global _ffmpeg_path
@@ -215,6 +216,74 @@ def get_ffprobe() -> str:
     if _ffprobe_path is None:
         _ffprobe_path = _find_ffprobe()
     return _ffprobe_path
+
+
+def detect_hw_encoder() -> str:
+    """检测可用的硬件视频编码器，返回最佳编码器名称。
+    
+    优先级：NVIDIA NVENC > AMD AMF > Intel QSV > CPU (libx264)
+    
+    Returns:
+        编码器名称字符串，如 'h264_nvenc', 'h264_amf', 'h264_qsv', 'libx264'
+    """
+    global _hw_encoder_cache
+    if _hw_encoder_cache is not None:
+        return _hw_encoder_cache
+
+    ffmpeg_path = get_ffmpeg()
+    if not ffmpeg_path:
+        _hw_encoder_cache = 'libx264'
+        return _hw_encoder_cache
+
+    # 硬件编码器优先级列表
+    hw_encoders = [
+        ('h264_nvenc',  'NVIDIA NVENC (GPU)'),
+        ('h264_amf',    'AMD AMF (GPU)'),
+        ('h264_qsv',    'Intel QSV (GPU)'),
+    ]
+
+    try:
+        use_shell = os.name == 'nt'
+        result = subprocess.run(
+            [ffmpeg_path, '-encoders'],
+            capture_output=True, text=True, timeout=15,
+            shell=use_shell,
+            creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0
+        )
+        output = result.stdout or ''
+
+        for encoder_name, encoder_desc in hw_encoders:
+            if encoder_name in output:
+                _debug_log(f"[FFmpeg] 检测到硬件编码器: {encoder_desc} ({encoder_name})")
+                _hw_encoder_cache = encoder_name
+                return _hw_encoder_cache
+
+    except Exception as e:
+        _debug_log(f"[FFmpeg] 硬件编码器检测失败: {e}")
+
+    _debug_log("[FFmpeg] 未检测到硬件编码器，使用 CPU 编码 (libx264)")
+    _hw_encoder_cache = 'libx264'
+    return _hw_encoder_cache
+
+
+def get_encoder_info() -> dict:
+    """获取当前编码器信息，用于UI显示。
+    
+    Returns:
+        {"encoder": str, "type": "GPU"|"CPU", "name": str}
+    """
+    encoder = detect_hw_encoder()
+    encoder_names = {
+        'h264_nvenc': 'NVIDIA NVENC',
+        'h264_amf':   'AMD AMF',
+        'h264_qsv':   'Intel QSV',
+        'libx264':    'CPU 软编码',
+    }
+    return {
+        'encoder': encoder,
+        'type': 'GPU' if encoder != 'libx264' else 'CPU',
+        'name': encoder_names.get(encoder, encoder),
+    }
 
 
 def ensure_ffmpeg(progress_callback=None) -> bool:
@@ -329,10 +398,17 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
         out_path = os.path.join(output_dir, out_name)
 
         # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 自动检测硬件编码器（GPU优先，CPU回退）
+        venc = detect_hw_encoder()
         cmd = [ffmpeg_path, '-y', '-i', file_path,
                '-ss', str(start), '-t', str(seg_duration),
-               '-c:v', 'libx264', '-c:a', 'aac',
+               '-c:v', venc, '-c:a', 'aac',
                '-avoid_negative_ts', 'make_zero', out_path]
+        # 硬件编码器需要额外参数
+        if venc == 'h264_nvenc':
+            cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
+        elif venc == 'h264_qsv':
+            cmd.extend(['-preset', 'medium'])
 
         use_shell = os.name == 'nt'
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
@@ -376,10 +452,17 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
         out_path = os.path.join(output_dir, out_name)
 
         # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 自动检测硬件编码器（GPU优先，CPU回退）
+        venc = detect_hw_encoder()
         cmd = [ffmpeg_path, '-y', '-i', file_path,
                '-ss', str(start), '-t', str(actual_duration),
-               '-c:v', 'libx264', '-c:a', 'aac',
+               '-c:v', venc, '-c:a', 'aac',
                '-avoid_negative_ts', 'make_zero', out_path]
+        # 硬件编码器需要额外参数
+        if venc == 'h264_nvenc':
+            cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
+        elif venc == 'h264_qsv':
+            cmd.extend(['-preset', 'medium'])
 
         use_shell = os.name == 'nt'
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
@@ -427,15 +510,22 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
         out_path = os.path.join(output_dir, f"{name}{ext}")
 
         # 使用 -ss 在 -i 之后（精确seek），重新编码以确保精确裁切
+        # 自动检测硬件编码器（GPU优先，CPU回退）
+        venc = detect_hw_encoder()
         cmd = [
             ffmpeg, '-y',
             '-i', file_path,
             '-ss', str(start),
             '-t', str(seg_duration),
-            '-c:v', 'libx264', '-c:a', 'aac',
+            '-c:v', venc, '-c:a', 'aac',
             '-avoid_negative_ts', 'make_zero',
             out_path
         ]
+        # 硬件编码器需要额外参数
+        if venc == 'h264_nvenc':
+            cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
+        elif venc == 'h264_qsv':
+            cmd.extend(['-preset', 'medium'])
 
         _debug_log(f"[FFmpeg] 裁切第 {i+1} 段...")
         use_shell = os.name == 'nt'

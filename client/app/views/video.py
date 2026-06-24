@@ -73,8 +73,11 @@ class _CutWorker(QThread):
             videos = [dm.get_video(vid) for vid in group["video_ids"]]
             videos = [v for v in videos if v]
             total = len(videos)
+            # 检测编码器并在首次进度中显示
+            enc_info = ffmpeg.get_encoder_info()
+            enc_tag = f"🚀{enc_info['name']}" if enc_info['type'] == 'GPU' else f"💻{enc_info['name']}"
             for idx, video in enumerate(videos):
-                self.progress.emit(f"裁切: {video['name']} ({idx+1}/{total})", int(idx/total*100))
+                self.progress.emit(f"[{enc_tag}] 裁切: {video['name']} ({idx+1}/{total})", int(idx/total*100))
                 if cut_rule["mode"] == "segments":
                     clips = ffmpeg.cut_video_segments(video["path"], cut_rule["value"], str(basket_dir), video["name"])
                 else:
@@ -1666,7 +1669,10 @@ class VideoView(QWidget):
         """检查FFmpeg状态，未安装则下载"""
         from .. import ffmpeg as ff
         if ff.is_ffmpeg_available():
-            Toast.success(self, "✅ FFmpeg 已安装，无需重复安装")
+            # 显示编码器信息
+            info = ff.get_encoder_info()
+            icon = "🚀" if info["type"] == "GPU" else "💻"
+            Toast.success(self, f"✅ FFmpeg 已安装 | {icon} 编码器: {info['name']} ({info['type']})")
             return
         # 未安装，弹窗确认后下载
         reply = QMessageBox.question(
