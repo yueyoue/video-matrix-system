@@ -504,6 +504,7 @@ class AccountView(QWidget):
         self._table.horizontalHeader().setStretchLastSection(False)
         self._table.setMinimumWidth(780)     # 确保最小宽度能完整显示所有列
         self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(48)  # 行高 48px，保证按钮不被压扁
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self._table, 1)
