@@ -20,12 +20,12 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineProfile, QWebEnginePage, QWebEngineCookieStore
 )
 
-from .styles.theme import (
+from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY,
     SUCCESS, DANGER, WARNING, BORDER_COLOR, BTN_PRIMARY, BTN_DEFAULT
 )
-from .widgets.toast import Toast
-from . import anti_ban
+from ..widgets.toast import Toast
+from .. import anti_ban
 
 # ── 平台登录 URL ──────────────────────────────────────────
 PLATFORM_LOGIN_URLS = {
