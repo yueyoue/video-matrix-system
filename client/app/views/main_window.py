@@ -1,5 +1,7 @@
 """Main window with sidebar and stacked content area."""
 
+from __future__ import annotations
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,

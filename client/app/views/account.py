@@ -3,6 +3,8 @@
 集成 WebView 扫码登录 + 防封安全策略
 """
 
+from __future__ import annotations
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,

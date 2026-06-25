@@ -6,6 +6,8 @@
 - 账号操作记录追踪
 """
 
+from __future__ import annotations
+
 import random
 import time
 import json

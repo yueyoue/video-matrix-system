@@ -1,5 +1,7 @@
 """Log center view with filtering, export, and local debug log viewer."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 from datetime import datetime

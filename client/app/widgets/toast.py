@@ -1,5 +1,7 @@
 """Toast notification widget."""
 
+from __future__ import annotations
+
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QPoint
 from PyQt6.QtWidgets import QLabel, QWidget, QHBoxLayout, QGraphicsOpacityEffect
 from PyQt6.QtGui import QColor, QPainter, QPainterPath

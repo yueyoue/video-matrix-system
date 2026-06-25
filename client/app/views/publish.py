@@ -1,5 +1,7 @@
 """Publish scheduling view with rules and queue."""
 
+from __future__ import annotations
+
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
