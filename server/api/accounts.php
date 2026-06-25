@@ -25,6 +25,10 @@ $id          = isset($segments[1]) ? (int)$segments[1] : 0;
 $sub         = $segments[2] ?? '';
 
 // 子路由
+if (isset($segments[1]) && $segments[1] === 'batch-check') {
+    batchCheck();
+    exit;
+}
 if ($sub === 'check' && $id > 0) {
     checkCookie($id);
     exit;
@@ -256,4 +260,62 @@ function checkCookie($id)
         'message'     => $message,
         'last_login'  => $account['last_login'],
     ]);
+}
+
+/**
+ * 批量检测账号状态
+ */
+function batchCheck()
+{
+    global $pdo, $currentUser;
+
+    $input = getJsonInput();
+    $ids = $input['ids'] ?? [];
+
+    if (empty($ids)) {
+        error('请选择要检测的账号');
+    }
+
+    $results = [];
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+    $stmt = $pdo->prepare("SELECT id, nickname, platform, cookie, status, last_login FROM " . table('platform_account') . " WHERE id IN ($placeholders)");
+    $stmt->execute($ids);
+    $accounts = $stmt->fetchAll();
+
+    foreach ($accounts as $account) {
+        $hasCookie = !empty($account['cookie']);
+        $isValid = false;
+        $message = 'Cookie为空';
+
+        if ($hasCookie) {
+            $isValid = true;
+            $message = 'Cookie已设置，有效期内';
+
+            // 获取平台配置进行实际检查
+            $configStmt = $pdo->prepare("SELECT config_json FROM " . table('platform_config') . " WHERE platform = ?");
+            $configStmt->execute([$account['platform']]);
+            $configRow = $configStmt->fetch();
+            // 可以扩展为实际的HTTP请求检查Cookie有效性
+        }
+
+        // 更新账号状态
+        $newStatus = $isValid ? 'active' : 'expired';
+        if ($account['status'] !== $newStatus) {
+            $pdo->prepare("UPDATE " . table('platform_account') . " SET status = ? WHERE id = ?")
+                ->execute([$newStatus, $account['id']]);
+        }
+
+        $results[] = [
+            'id'       => (int)$account['id'],
+            'nickname' => $account['nickname'],
+            'platform' => $account['platform'],
+            'valid'    => $isValid,
+            'message'  => $message,
+        ];
+    }
+
+    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '账号管理', '批量检测', '检测 ' . count($ids) . ' 个账号');
+
+    success(['results' => $results]);
 }

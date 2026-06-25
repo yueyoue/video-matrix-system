@@ -588,22 +588,25 @@ class AccountView(QWidget):
             avatar.setStyleSheet("font-size: 18px;")
             self._table.setCellWidget(i, 1, avatar)
 
-            self._table.setItem(i, 2, QTableWidgetItem(str(acc.get("nickname", ""))))
+            nick_item = QTableWidgetItem(str(acc.get("nickname", "")))
+            nick_item.setData(Qt.ItemDataRole.UserRole, acc.get("id", acc.get("_id", i)))
+            self._table.setItem(i, 2, nick_item)
 
-            status = str(acc.get("status", "正常"))
-            status_item = QTableWidgetItem(status)
-            if "正常" in status or "active" in status.lower():
+            status = str(acc.get("status", "active"))
+            status_display = "正常" if status == "active" else ("已过期" if status == "expired" else status)
+            status_item = QTableWidgetItem(status_display)
+            if status == "active" or "正常" in status:
                 status_item.setForeground(QColor(SUCCESS))
-            elif "异常" in status or "error" in status.lower():
+            elif status == "expired" or "异常" in status or "error" in status.lower():
                 status_item.setForeground(QColor(DANGER))
             else:
                 status_item.setForeground(QColor(WARNING))
             self._table.setItem(i, 3, status_item)
 
-            self._table.setItem(i, 4, QTableWidgetItem(str(acc.get("workCount", acc.get("videoCount", 0)))))
-            self._table.setItem(i, 5, QTableWidgetItem(str(acc.get("totalPlays", acc.get("playCount", 0)))))
-            self._table.setItem(i, 6, QTableWidgetItem(str(acc.get("todayPublish", 0))))
-            self._table.setItem(i, 7, QTableWidgetItem(str(acc.get("lastLogin", acc.get("lastLoginAt", "")))))
+            self._table.setItem(i, 4, QTableWidgetItem(str(acc.get("works_count", acc.get("workCount", acc.get("videoCount", 0))))))
+            self._table.setItem(i, 5, QTableWidgetItem(str(acc.get("total_plays", acc.get("totalPlays", acc.get("playCount", 0))))))
+            self._table.setItem(i, 6, QTableWidgetItem(str(acc.get("today_publish", acc.get("todayPublish", 0)))))
+            self._table.setItem(i, 7, QTableWidgetItem(str(acc.get("last_login", acc.get("lastLogin", acc.get("lastLoginAt", ""))))))
 
             # action buttons
             action_widget = QWidget()
@@ -712,12 +715,27 @@ class AccountView(QWidget):
         for i in range(self._table.rowCount()):
             cb = self._table.cellWidget(i, 0)
             if isinstance(cb, QCheckBox) and cb.isChecked():
-                ids.append(str(i))  # placeholder
+                # 使用存储在表格中的账号ID
+                item = self._table.item(i, 2)  # nickname column
+                aid = item.data(Qt.ItemDataRole.UserRole) if item else None
+                if aid is not None:
+                    ids.append(str(aid))
         if not ids:
             Toast.warning(self, "请先勾选要检测的账号")
             return
         w = _AccountWorker(api.batch_check_accounts, ids)
-        w.done.connect(lambda _: Toast.success(self, "批量检测已提交"))
+        w.done.connect(self._on_batch_check_done)
         w.failed.connect(lambda m: Toast.error(self, f"检测失败: {m}"))
         self._workers.append(w)
         w.start()
+
+    def _on_batch_check_done(self, data: dict):
+        d = data.get("data", data)
+        results = d.get("results", [])
+        success_count = sum(1 for r in results if r.get("valid"))
+        fail_count = len(results) - success_count
+        msg = f"检测完成: {success_count} 个正常"
+        if fail_count > 0:
+            msg += f", {fail_count} 个异常"
+        Toast.success(self, msg)
+        self._load()

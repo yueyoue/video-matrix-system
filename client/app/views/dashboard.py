@@ -115,10 +115,10 @@ class DashboardView(QWidget):
     def _on_data(self, data: dict):
         d = data.get("data", data)
         # 服务端返回 snake_case 字段名
-        self._card_gen.set_value(str(d.get("today_videos", d.get("videoCount", 0))))
-        self._card_ok.set_value(str(d.get("today_publish_success", d.get("successCount", 0))))
-        self._card_fail.set_value(str(d.get("today_publish_failed", d.get("failCount", 0))))
-        self._card_acc.set_value(str(d.get("total_users", d.get("accountCount", 0))))
+        self._card_gen.set_value(str(d.get("today_videos", 0)))
+        self._card_ok.set_value(str(d.get("today_publish_success", 0)))
+        self._card_fail.set_value(str(d.get("today_publish_failed", 0)))
+        self._card_acc.set_value(str(d.get("accountCount", d.get("total_users", 0))))
 
         # recent records
         records = d.get("recentPublish", d.get("recent", []))
