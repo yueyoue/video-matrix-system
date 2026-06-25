@@ -8,8 +8,15 @@
  * POST   /api/accounts/{id}/check - 检查Cookie状态
  */
 
-require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/auth.php';
+// 兼容直接访问（绕过 index.php 路由）
+if (!isset($GLOBALS['route_segments'])) {
+    require_once __DIR__ . '/../includes/response.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    $apiPath = preg_replace('#^/api/#', '', parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
+    $GLOBALS['route_segments'] = explode('/', trim($apiPath, '/'));
+    $GLOBALS['route_method']   = $_SERVER['REQUEST_METHOD'];
+}
 
 $currentUser = requireAuth();
 $segments    = $GLOBALS['route_segments'];
