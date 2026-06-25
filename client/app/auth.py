@@ -1,5 +1,6 @@
 """Token management & authentication state."""
 
+from typing import Optional
 import json
 import os
 import time
@@ -12,9 +13,9 @@ class AuthManager:
     """Manages JWT token persistence and validity."""
 
     def __init__(self):
-        self._token: str | None = None
-        self._user: dict | None = None
-        self._expires_at: float = 0
+        self._token = None  # type: Optional[str]
+        self._user = None   # type: Optional[dict]
+        self._expires_at = 0.0
         self._load()
 
     # ── persistence ────────────────────────────────────────────
@@ -38,11 +39,11 @@ class AuthManager:
 
     # ── public API ─────────────────────────────────────────────
     @property
-    def token(self) -> str | None:
+    def token(self):  # type: () -> Optional[str]
         return self._token
 
     @property
-    def user(self) -> dict | None:
+    def user(self):  # type: () -> Optional[dict]
         return self._user
 
     @property
@@ -53,7 +54,7 @@ class AuthManager:
             return False
         return True
 
-    def set_token(self, token: str, user: dict | None = None, expires_in: int = 86400):
+    def set_token(self, token, user=None, expires_in=86400):  # type: (str, Optional[dict], int) -> None
         self._token = token
         self._user = user
         self._expires_at = time.time() + expires_in
