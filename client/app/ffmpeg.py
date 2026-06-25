@@ -430,25 +430,23 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
     ext = Path(file_path).suffix
     seg_duration = duration / segments
     outputs = []
+    venc = detect_hw_encoder()
 
     for i in range(segments):
         start = i * seg_duration
         out_name = f"{base_name}_{i+1}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        # 使用 trim 滤镜精确裁切（最可靠的方案）
-        # 自动检测硬件编码器（GPU优先，CPU回退）
-        venc = detect_hw_encoder()
-        end = start + seg_duration
+        # 使用 -ss + -t 精确裁切（比 trim 滤镜更可靠）
         cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
                '-i', file_path,
-               '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
-               '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
-               '-c:v', venc, '-c:a', 'aac', out_path]
-        # 硬件编码器需要额外参数
+               '-ss', str(start), '-t', str(seg_duration),
+               '-c:v', venc, '-c:a', 'aac',
+               '-avoid_negative_ts', 'make_zero',
+               out_path]
         if venc == 'h264_nvenc':
             cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
-        elif venc == 'h264_qsv':
+        elif venc in ('h264_qsv', 'libx264'):
             cmd.extend(['-preset', 'medium'])
 
         use_shell = os.name == 'nt'
@@ -459,6 +457,14 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
             err_msg = (result.stderr or '').strip()
             _debug_log(f"[FFmpeg] 裁切第{i+1}段失败: {err_msg[:500]}")
             raise RuntimeError(f"裁切失败: {err_msg[:500] or '未知错误'}")
+
+        # 验证输出文件时长
+        try:
+            actual_dur = get_duration(out_path)
+            _debug_log(f"[FFmpeg] 第{i+1}段: 期望{seg_duration:.1f}s, 实际{actual_dur:.1f}s")
+        except Exception:
+            pass
+
         outputs.append(out_path)
 
     _debug_log(f"[FFmpeg] 裁切完成，共 {len(outputs)} 个片段")
@@ -487,26 +493,23 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
     outputs = []
     start = 0
     segment_num = 1
+    venc = detect_hw_encoder()
 
     while start < duration:
-        # 计算本段实际时长（最后一段可能不足 segment_duration）
         actual_duration = min(segment_duration, duration - start)
         out_name = f"{base_name}_{segment_num}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
-        # 使用 trim 滤镜精确裁切（最可靠的方案）
-        # 自动检测硬件编码器（GPU优先，CPU回退）
-        venc = detect_hw_encoder()
-        end = start + actual_duration
+        # 使用 -ss + -t 精确裁切（比 trim 滤镜更可靠）
         cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
                '-i', file_path,
-               '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
-               '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
-               '-c:v', venc, '-c:a', 'aac', out_path]
-        # 硬件编码器需要额外参数
+               '-ss', str(start), '-t', str(actual_duration),
+               '-c:v', venc, '-c:a', 'aac',
+               '-avoid_negative_ts', 'make_zero',
+               out_path]
         if venc == 'h264_nvenc':
             cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
-        elif venc == 'h264_qsv':
+        elif venc in ('h264_qsv', 'libx264'):
             cmd.extend(['-preset', 'medium'])
 
         use_shell = os.name == 'nt'
@@ -517,6 +520,14 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
             err_msg = (result.stderr or '').strip()
             _debug_log(f"[FFmpeg] 裁切第{segment_num}段失败: {err_msg[:500]}")
             raise RuntimeError(f"裁切失败: {err_msg[:500] or '未知错误'}")
+
+        # 验证输出文件时长
+        try:
+            actual_dur = get_duration(out_path)
+            _debug_log(f"[FFmpeg] 第{segment_num}段: 期望{actual_duration:.1f}s, 实际{actual_dur:.1f}s")
+        except Exception:
+            pass
+
         outputs.append(out_path)
         start += segment_duration
         segment_num += 1
@@ -556,22 +567,19 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
             name = f"{base_name}_片段{i + 1}"
         out_path = os.path.join(output_dir, f"{name}{ext}")
 
-        # 使用 trim 滤镜精确裁切（最可靠的方案）
-        # 自动检测硬件编码器（GPU优先，CPU回退）
+        # 使用 -ss + -t 精确裁切（比 trim 滤镜更可靠）
         venc = detect_hw_encoder()
-        end = start + seg_duration
         cmd = [
             ffmpeg, '-y', '-hide_banner', '-loglevel', 'error',
             '-i', file_path,
-            '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
-            '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
+            '-ss', str(start), '-t', str(seg_duration),
             '-c:v', venc, '-c:a', 'aac',
+            '-avoid_negative_ts', 'make_zero',
             out_path
         ]
-        # 硬件编码器需要额外参数
         if venc == 'h264_nvenc':
             cmd.extend(['-preset', 'p4', '-rc', 'vbr'])
-        elif venc == 'h264_qsv':
+        elif venc in ('h264_qsv', 'libx264'):
             cmd.extend(['-preset', 'medium'])
 
         _debug_log(f"[FFmpeg] 裁切第 {i+1} 段...")
