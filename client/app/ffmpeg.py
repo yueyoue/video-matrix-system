@@ -221,6 +221,7 @@ def get_ffprobe() -> str:
 def detect_hw_encoder() -> str:
     """检测可用的硬件视频编码器，返回最佳编码器名称。
     
+    不仅检查编码器是否列出，还实际测试能否正常工作。
     优先级：NVIDIA NVENC > AMD AMF > Intel QSV > CPU (libx264)
     
     Returns:
@@ -244,6 +245,8 @@ def detect_hw_encoder() -> str:
 
     try:
         use_shell = os.name == 'nt'
+
+        # 第一步：获取可用编码器列表
         result = subprocess.run(
             [ffmpeg_path, '-encoders'],
             capture_output=True, text=True, timeout=15,
@@ -252,16 +255,52 @@ def detect_hw_encoder() -> str:
         )
         output = result.stdout or ''
 
+        # 第二步：逐个测试编码器是否真正可用
         for encoder_name, encoder_desc in hw_encoders:
-            if encoder_name in output:
-                _debug_log(f"[FFmpeg] 检测到硬件编码器: {encoder_desc} ({encoder_name})")
+            if encoder_name not in output:
+                continue
+
+            _debug_log(f"[FFmpeg] 编码器 {encoder_desc} 已列出，正在测试是否可用...")
+
+            # 实际测试编码器：编码一小段测试视频
+            test_out = os.path.join(os.path.expanduser('~'), '.video-matrix', 'encoder_test.mp4')
+            os.makedirs(os.path.dirname(test_out), exist_ok=True)
+            test_cmd = [
+                ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+                '-f', 'lavfi', '-i', 'color=c=black:s=64x64:d=1:r=1',
+                '-c:v', encoder_name, '-t', '1',
+                '-f', 'mp4', test_out
+            ]
+            # 硬件编码器需要额外参数
+            if encoder_name == 'h264_nvenc':
+                test_cmd.extend(['-preset', 'p4'])
+            elif encoder_name == 'h264_qsv':
+                test_cmd.extend(['-preset', 'medium'])
+
+            test_result = subprocess.run(
+                test_cmd,
+                capture_output=True, text=True, timeout=30,
+                shell=use_shell,
+                creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0
+            )
+
+            # 清理测试文件
+            if os.path.exists(test_out):
+                os.remove(test_out)
+
+            if test_result.returncode == 0:
+                _debug_log(f"[FFmpeg] ✅ 编码器 {encoder_desc} 测试通过")
                 _hw_encoder_cache = encoder_name
                 return _hw_encoder_cache
+            else:
+                err = (test_result.stderr or '').strip()
+                _debug_log(f"[FFmpeg] ❌ 编码器 {encoder_desc} 测试失败: {err[:300]}")
+                # 继续测试下一个编码器
 
     except Exception as e:
         _debug_log(f"[FFmpeg] 硬件编码器检测失败: {e}")
 
-    _debug_log("[FFmpeg] 未检测到硬件编码器，使用 CPU 编码 (libx264)")
+    _debug_log("[FFmpeg] 所有硬件编码器均不可用，使用 CPU 编码 (libx264)")
     _hw_encoder_cache = 'libx264'
     return _hw_encoder_cache
 
