@@ -490,13 +490,19 @@ class AccountView(QWidget):
             "今日发布", "最后登录", "操作"
         ])
         header = self._table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 40)
-        self._table.setColumnWidth(1, 50)
-        self._table.setColumnWidth(8, 170)
+        # 全部使用 Interactive 模式，防止窄窗口时操作列被挤出
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.setColumnWidth(0, 40)    # 全选
+        self._table.setColumnWidth(1, 50)    # 头像
+        self._table.setColumnWidth(2, 160)   # 昵称
+        self._table.setColumnWidth(3, 80)    # 状态
+        self._table.setColumnWidth(4, 80)    # 作品数
+        self._table.setColumnWidth(5, 100)   # 总播放量
+        self._table.setColumnWidth(6, 80)    # 今日发布
+        self._table.setColumnWidth(7, 140)   # 最后登录
+        self._table.setColumnWidth(8, 150)   # 操作
+        self._table.horizontalHeader().setStretchLastSection(False)
+        self._table.setMinimumWidth(780)     # 确保最小宽度能完整显示所有列
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
