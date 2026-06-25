@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QDialog,
@@ -575,11 +576,11 @@ class AccountView(QWidget):
             status = str(acc.get("status", "正常"))
             status_item = QTableWidgetItem(status)
             if "正常" in status or "active" in status.lower():
-                status_item.setForeground(SUCCESS)
+                status_item.setForeground(QColor(SUCCESS))
             elif "异常" in status or "error" in status.lower():
-                status_item.setForeground(DANGER)
+                status_item.setForeground(QColor(DANGER))
             else:
-                status_item.setForeground(WARNING)
+                status_item.setForeground(QColor(WARNING))
             self._table.setItem(i, 3, status_item)
 
             self._table.setItem(i, 4, QTableWidgetItem(str(acc.get("workCount", acc.get("videoCount", 0)))))
