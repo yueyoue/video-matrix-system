@@ -94,30 +94,6 @@ jobs:
           pyinstaller --clean --noconfirm --onedir --windowed --name VideoMatrix --noconsole --exclude-module PyQt6.Qt3D --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtQuick --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtRemoteObjects --exclude-module PyQt6.QtSensors --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtSvg --exclude-module PyQt6.QtTest --exclude-module PyQt6.QtHelp --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtShaderTools --exclude-module PyQt6.QtSpatialAudio --exclude-module PyQt6.QtHttpServer --exclude-module PyQt6.QtPdf --exclude-module PyQt6.QtStateMachine --exclude-module PyQt6.QtUiTools main.py
         shell: cmd
         working-directory: client
-      - name: Bundle WebEngine binaries
-        run: |
-          python -c "
-          import PyQt6, os, shutil, glob
-          qt_dir = os.path.join(os.path.dirname(PyQt6.__file__), 'Qt6')
-          dist = 'client/dist/VideoMatrix'
-          # Copy Qt6 binaries and resources needed by WebEngine
-          for sub in ['bin', 'lib', 'resources', 'translations']:
-              src = os.path.join(qt_dir, sub)
-              if os.path.isdir(src):
-                  dst = os.path.join(dist, 'PyQt6', 'Qt6', sub)
-                  if not os.path.isdir(dst):
-                      shutil.copytree(src, dst)
-                      print(f'Copied {sub}/ ({sum(os.path.getsize(os.path.join(dp,f)) for dp,dn,fn in os.walk(dst) for f in fn)/1048576:.1f} MB)')
-          # Copy Qt6 plugins
-          src_plugins = os.path.join(qt_dir, 'plugins')
-          if os.path.isdir(src_plugins):
-              dst_plugins = os.path.join(dist, 'PyQt6', 'Qt6', 'plugins')
-              if not os.path.isdir(dst_plugins):
-                  shutil.copytree(src_plugins, dst_plugins)
-                  print(f'Copied plugins/ ({sum(os.path.getsize(os.path.join(dp,f)) for dp,dn,fn in os.walk(dst_plugins) for f in fn)/1048576:.1f} MB)')
-          print('WebEngine binaries bundled successfully')
-          "
-        shell: bash
       - name: Zip dist
         run: |
           cd client/dist
