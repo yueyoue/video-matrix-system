@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
-    DANGER, WARNING, BORDER_COLOR, TABLE_STYLE, BTN_PRIMARY, BTN_DEFAULT,
+    DANGER, DANGER_HOVER, WARNING, BORDER_COLOR, TABLE_STYLE, BTN_PRIMARY, BTN_DEFAULT,
     BTN_DANGER, BTN_PRIMARY_SM, BTN_DANGER_TEXT, INPUT_STYLE, CHECKBOX_STYLE,
     TAB_STYLE, BTN_TEXT
 )
@@ -496,7 +496,7 @@ class AccountView(QWidget):
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
         self._table.setColumnWidth(0, 40)
         self._table.setColumnWidth(1, 50)
-        self._table.setColumnWidth(8, 140)
+        self._table.setColumnWidth(8, 170)
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -556,6 +556,16 @@ class AccountView(QWidget):
             self._total_pages = 1
             _debug_log(f"[AccountView] 无法解析数据: type={type(d)}")
 
+        # 去重：按 (nickname, platform) 去重，保留最后一条
+        original_count = len(accounts)
+        seen = {}
+        for acc in accounts:
+            key = (acc.get("nickname", ""), acc.get("platform", ""))
+            seen[key] = acc
+        accounts = list(seen.values())
+        if len(accounts) < original_count:
+            _debug_log(f"[AccountView] 去重: {original_count} -> {len(accounts)}")
+
         _debug_log(f"[AccountView] 账号数量: {len(accounts)}")
 
         self._table.setRowCount(len(accounts))
@@ -597,7 +607,8 @@ class AccountView(QWidget):
             edit_btn = QPushButton("编辑")
             edit_btn.setStyleSheet(BTN_PRIMARY_SM)
             edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            edit_btn.setFixedHeight(26)
+            edit_btn.setFixedHeight(28)
+            edit_btn.setFixedWidth(60)
             aid = str(acc.get("id", acc.get("_id", i)))
             edit_btn.clicked.connect(lambda _, a=acc: self._on_edit(a))
             al.addWidget(edit_btn)
@@ -607,11 +618,13 @@ class AccountView(QWidget):
                 QPushButton {{
                     background: {DANGER}; color: white; border: none;
                     border-radius: 4px; padding: 4px 12px; font-size: 12px;
+                    min-height: 28px; min-width: 60px;
                 }}
-                QPushButton:hover {{ background: {DANGER}; }}
+                QPushButton:hover {{ background: {DANGER_HOVER}; }}
             """)
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            del_btn.setFixedHeight(26)
+            del_btn.setFixedHeight(28)
+            del_btn.setFixedWidth(60)
             del_btn.clicked.connect(lambda _, a=acc: self._on_delete(a))
             al.addWidget(del_btn)
 
