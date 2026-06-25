@@ -1,6 +1,7 @@
 """Statistic card widget for dashboard."""
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
 )
@@ -46,22 +47,29 @@ class StatCard(QFrame):
         text_layout.setSpacing(4)
 
         self._value_label = QLabel(str(value))
-        self._value_label.setStyleSheet(f"""
-            font-size: 28px;
-            font-weight: 700;
-            color: {TEXT_COLOR};
-        """)
+        value_font = QFont()
+        value_font.setPointSize(20)
+        value_font.setBold(True)
+        self._value_label.setFont(value_font)
+        self._value_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
+        self._value_label.setMinimumWidth(60)
         text_layout.addWidget(self._value_label)
 
         bottom = QHBoxLayout()
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"font-size: 13px; color: {TEXT_SECONDARY};")
+        title_font = QFont()
+        title_font.setPointSize(10)
+        title_label.setFont(title_font)
+        title_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
         bottom.addWidget(title_label)
 
         if change:
             change_label = QLabel(change)
             c = SUCCESS if not change.startswith("-") else DANGER
-            change_label.setStyleSheet(f"font-size: 12px; color: {c}; font-weight: 500;")
+            change_font = QFont()
+            change_font.setPointSize(9)
+            change_label.setFont(change_font)
+            change_label.setStyleSheet(f"color: {c}; background: transparent;")
             bottom.addWidget(change_label)
 
         bottom.addStretch()
