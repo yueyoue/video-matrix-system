@@ -176,10 +176,14 @@ class _AddAccountDialog(QDialog):
             dlg = WebViewLoginDialog(platform, nickname, self)
             dlg.login_success.connect(self._on_login_success)
             dlg.exec()
-        except ImportError as e:
-            Toast.error(self, f"WebView 组件未安装: {e}\\n请安装 PyQt6-WebEngine")
+        except ImportError:
+            Toast.error(self, "WebView 组件未安装，请安装 PyQt6-WebEngine:\npip install PyQt6-WebEngine")
         except Exception as e:
-            Toast.error(self, f"打开登录窗口失败: {e}")
+            err_msg = str(e)
+            if 'QtWebEngineWidgets' in err_msg or 'ShareOpenGLContexts' in err_msg:
+                Toast.error(self, "WebView 初始化失败，请重启应用或重装 PyQt6-WebEngine")
+            else:
+                Toast.error(self, f"打开登录窗口失败: {err_msg}")
 
     def _on_login_success(self, data: dict):
         """WebView 登录成功回调"""

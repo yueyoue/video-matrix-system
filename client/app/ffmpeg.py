@@ -401,7 +401,8 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
         # 自动检测硬件编码器（GPU优先，CPU回退）
         venc = detect_hw_encoder()
         end = start + seg_duration
-        cmd = [ffmpeg_path, '-y', '-i', file_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', file_path,
                '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
                '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
                '-c:v', venc, '-c:a', 'aac', out_path]
@@ -416,7 +417,9 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
-            raise RuntimeError(f"裁切失败: {(result.stderr or '')[:200]}")
+            err_msg = (result.stderr or '').strip()
+            _debug_log(f"[FFmpeg] 裁切第{i+1}段失败: {err_msg[:500]}")
+            raise RuntimeError(f"裁切失败: {err_msg[:500] or '未知错误'}")
         outputs.append(out_path)
 
     _debug_log(f"[FFmpeg] 裁切完成，共 {len(outputs)} 个片段")
@@ -456,7 +459,8 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
         # 自动检测硬件编码器（GPU优先，CPU回退）
         venc = detect_hw_encoder()
         end = start + actual_duration
-        cmd = [ffmpeg_path, '-y', '-i', file_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', file_path,
                '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
                '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
                '-c:v', venc, '-c:a', 'aac', out_path]
@@ -471,7 +475,9 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
-            raise RuntimeError(f"裁切失败: {(result.stderr or '')[:200]}")
+            err_msg = (result.stderr or '').strip()
+            _debug_log(f"[FFmpeg] 裁切第{segment_num}段失败: {err_msg[:500]}")
+            raise RuntimeError(f"裁切失败: {err_msg[:500] or '未知错误'}")
         outputs.append(out_path)
         start += segment_duration
         segment_num += 1
@@ -516,7 +522,7 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
         venc = detect_hw_encoder()
         end = start + seg_duration
         cmd = [
-            ffmpeg, '-y',
+            ffmpeg, '-y', '-hide_banner', '-loglevel', 'error',
             '-i', file_path,
             '-vf', f'trim=start={start}:end={end},setpts=PTS-STARTPTS',
             '-af', f'atrim=start={start}:end={end},asetpts=PTS-STARTPTS',
@@ -535,8 +541,9 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
-            _debug_log(f"[FFmpeg] 裁切失败: {result.stderr[:300]}")
-            raise RuntimeError(f"裁切失败: {result.stderr[:200]}")
+            err_msg = (result.stderr or '').strip()
+            _debug_log(f"[FFmpeg] 裁切第{i+1}段失败: {err_msg[:500]}")
+            raise RuntimeError(f"裁切失败: {err_msg[:500] or '未知错误'}")
 
         outputs.append(out_path)
         _debug_log(f"[FFmpeg] 第 {i+1} 段完成: {out_path}")
@@ -562,7 +569,8 @@ def mix_videos(video_paths: list, output_path: str, bg_audio: str = None, volume
         for vp in video_paths:
             f.write(f"file '{os.path.abspath(vp)}'\n")
 
-    cmd = [ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', list_file]
+    cmd = [ffmpeg, '-y', '-hide_banner', '-loglevel', 'error',
+           '-f', 'concat', '-safe', '0', '-i', list_file]
 
     if bg_audio and bg_audio != '无' and os.path.exists(bg_audio):
         cmd.extend(['-i', bg_audio, '-filter_complex',
@@ -576,7 +584,8 @@ def mix_videos(video_paths: list, output_path: str, bg_audio: str = None, volume
                                 shell=use_shell,
                                 creationflags=subprocess.CREATE_NO_WINDOW if use_shell else 0)
         if result.returncode != 0:
-            raise RuntimeError(f"混剪失败: {result.stderr[:200]}")
+            err_msg = (result.stderr or '').strip()
+            raise RuntimeError(f"混剪失败: {err_msg[:500] or '未知错误'}")
     finally:
         if os.path.exists(list_file):
             os.remove(list_file)
@@ -596,7 +605,8 @@ def add_subtitle(video_path: str, text: str, position: str = 'bottom'):
     safe_text = text.replace("'", "'" * 2).replace(":", "\\:")
     y_pos = 'h-th-20' if position == 'bottom' else '20'
     filter_str = f"drawtext=text='{safe_text}':fontsize=24:fontcolor=white:borderw=2:bordercolor=black:x=(w-tw)/2:y={y_pos}"
-    cmd = [ffprobe, '-y', '-i', video_path, '-vf', filter_str, '-c:a', 'copy', tmp_out]
+    cmd = [ffprobe, '-y', '-hide_banner', '-loglevel', 'error',
+           '-i', video_path, '-vf', filter_str, '-c:a', 'copy', tmp_out]
     use_shell = os.name == 'nt'
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
                             shell=use_shell,
@@ -628,19 +638,22 @@ def insert_audio(video_path: str, audio_path: str, position: str = "head", fixed
 
     if position == "head":
         # 片头：音频放在视频开头
-        cmd = [ffmpeg_path, '-y', '-i', audio_path, '-i', video_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', audio_path, '-i', video_path,
                '-filter_complex',
                f'[0:a]apad=pad_dur={duration}[a0];[1:a][a0]amix=inputs=2:duration=first:dropout_transition=0[aout]',
                '-map', '1:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
     elif position == "tail":
         # 片尾：音频放在视频末尾
-        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', video_path, '-i', audio_path,
                '-filter_complex',
                f'[0:a]apad=pad_dur={duration + audio_dur}[a0];[a0][1:a]amix=inputs=2:duration=longest:dropout_transition=0[aout]',
                '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
     elif position == "fixed":
         # 固定时间点插入
-        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', video_path, '-i', audio_path,
                '-filter_complex',
                f'[1:a]adelay={int(fixed_time*1000)}|{int(fixed_time*1000)}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]',
                '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]
@@ -648,7 +661,8 @@ def insert_audio(video_path: str, audio_path: str, position: str = "head", fixed
         # random - 在随机时间点插入
         import random as _rnd
         rand_t = _rnd.uniform(1, max(1, duration - audio_dur - 1))
-        cmd = [ffmpeg_path, '-y', '-i', video_path, '-i', audio_path,
+        cmd = [ffmpeg_path, '-y', '-hide_banner', '-loglevel', 'error',
+               '-i', video_path, '-i', audio_path,
                '-filter_complex',
                f'[1:a]adelay={int(rand_t*1000)}|{int(rand_t*1000)}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]',
                '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-shortest', tmp_out]

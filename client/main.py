@@ -7,6 +7,13 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# PyQt6-WebEngine must be imported BEFORE QApplication is created
+# otherwise Qt raises: "QtWebEngineWidgets must be imported before QApplication"
+try:
+    import PyQt6.QtWebEngineWidgets  # noqa: F401 - must be imported early
+except ImportError:
+    pass  # WebEngine not installed; will show error when user tries to scan-login
+
 from PyQt6.QtWidgets import QApplication, QStackedWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
