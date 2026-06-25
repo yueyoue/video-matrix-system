@@ -47,33 +47,57 @@ class _InstallWorker(QThread):
     def run(self):
         import subprocess
         import sys
+        import time
         try:
-            self.progress.emit("正在安装 PyQt6-WebEngine，请稍候...")
             python = sys.executable
-            # 使用国内镜像源，确保国内网络可正常下载
             mirrors = [
-                ('清华源', 'https://pypi.tuna.tsinghua.edu.cn/simple'),
-                ('阿里源', 'https://mirrors.aliyun.com/pypi/simple'),
-                ('官方源', 'https://pypi.org/simple'),
+                ('清华源', 'https://pypi.tuna.tsinghua.edu.cn/simple', 'pypi.tuna.tsinghua.edu.cn'),
+                ('阿里源', 'https://mirrors.aliyun.com/pypi/simple', 'mirrors.aliyun.com'),
+                ('豆瓣源', 'https://pypi.douban.com/simple', 'pypi.douban.com'),
+                ('官方源', 'https://pypi.org/simple', 'pypi.org'),
             ]
-            last_err = ''
-            for name, url in mirrors:
-                self.progress.emit(f"正在从{name}安装 PyQt6-WebEngine...")
-                result = subprocess.run(
-                    [python, '-m', 'pip', 'install', 'PyQt6-WebEngine', '--upgrade',
-                     '-i', url, '--trusted-host', url.split('//')[1].split('/')[0]],
-                    capture_output=True, text=True, timeout=300,
-                    creationflags=0x08000000 if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-                )
-                if result.returncode == 0:
-                    self.finished.emit(True, "安装成功！请重启应用程序后再次扫码登录。")
-                    return
+
+            # 测速：用 socket 连接测试延迟，选最快的源
+            self.progress.emit("正在测速选择最快的下载源...")
+            import socket
+            fastest = None
+            fastest_time = 999
+            for name, url, host in mirrors:
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(3)
+                    start_t = time.time()
+                    s.connect((host, 443))
+                    elapsed = time.time() - start_t
+                    s.close()
+                    if elapsed < fastest_time:
+                        fastest_time = elapsed
+                        fastest = (name, url, host)
+                except Exception:
+                    continue
+
+            if fastest is None:
+                fastest = ('清华源', 'https://pypi.tuna.tsinghua.edu.cn/simple', 'pypi.tuna.tsinghua.edu.cn')
+
+            name, url, host = fastest
+            self.progress.emit(f"✅ 选择{name}（延迟 {fastest_time*1000:.0f}ms），开始安装...")
+
+            result = subprocess.run(
+                [python, '-m', 'pip', 'install', 'PyQt6-WebEngine', '--upgrade',
+                 '-i', url, '--trusted-host', host],
+                capture_output=True, text=True, timeout=300,
+                creationflags=0x08000000 if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            if result.returncode == 0:
+                self.finished.emit(True, "安装成功！请重启应用程序后再次扫码登录。")
+                return
+            else:
                 last_err = (result.stderr or result.stdout or '').strip()[-200:]
-            self.finished.emit(False, f"所有源均安装失败：{last_err}\n请手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
+                self.finished.emit(False, f"{name}安装失败：{last_err}\n请手动执行：pip install PyQt6-WebEngine -i {url}")
         except subprocess.TimeoutExpired:
-            self.finished.emit(False, "安装超时，请检查网络后重试，或手动执行：\npip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
+            self.finished.emit(False, f"安装超时，请检查网络后重试。\n手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
         except Exception as e:
-            self.finished.emit(False, f"安装出错：{e}\n请手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
+            self.finished.emit(False, f"安装出错：{e}\n手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
 
 
 class _InstallWebEngineDialog(QDialog):

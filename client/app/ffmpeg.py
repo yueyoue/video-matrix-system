@@ -434,6 +434,12 @@ def cut_video_segments(file_path: str, segments: int, output_dir: str, base_name
 
     for i in range(segments):
         start = i * seg_duration
+
+        # 跳过不足1秒的剩余片段
+        if seg_duration < 1.0:
+            _debug_log(f"[FFmpeg] 跳过第{i+1}段: 每段{seg_duration:.2f}s 不足1秒")
+            break
+
         out_name = f"{base_name}_{i+1}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
@@ -497,6 +503,12 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
 
     while start < duration:
         actual_duration = min(segment_duration, duration - start)
+
+        # 跳过不足1秒的剩余片段，避免产生0秒视频
+        if actual_duration < 1.0:
+            _debug_log(f"[FFmpeg] 跳过第{segment_num}段: 剩余{actual_duration:.2f}s 不足1秒")
+            break
+
         out_name = f"{base_name}_{segment_num}{ext}"
         out_path = os.path.join(output_dir, out_name)
 
@@ -525,6 +537,11 @@ def cut_video_by_duration(file_path: str, segment_duration: float, output_dir: s
         try:
             actual_dur = get_duration(out_path)
             _debug_log(f"[FFmpeg] 第{segment_num}段: 期望{actual_duration:.1f}s, 实际{actual_dur:.1f}s")
+            # 如果实际时长不足0.5秒，删除这个空文件
+            if actual_dur < 0.5:
+                _debug_log(f"[FFmpeg] 第{segment_num}段实际时长{actual_dur:.2f}s，删除")
+                os.remove(out_path)
+                break
         except Exception:
             pass
 
@@ -562,6 +579,12 @@ def cut_video(file_path: str, segments: int, name_rule: str, output_dir: str = N
 
     for i in range(segments):
         start = i * seg_duration
+
+        # 跳过不足1秒的剩余片段
+        if seg_duration < 1.0:
+            _debug_log(f"[FFmpeg] 跳过第{i+1}段: 每段{seg_duration:.2f}s 不足1秒")
+            break
+
         name = name_rule.replace('{原名}', base_name).replace('{序号}', str(i + 1))
         if '{' in name:
             name = f"{base_name}_片段{i + 1}"
