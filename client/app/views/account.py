@@ -50,20 +50,30 @@ class _InstallWorker(QThread):
         try:
             self.progress.emit("正在安装 PyQt6-WebEngine，请稍候...")
             python = sys.executable
-            result = subprocess.run(
-                [python, '-m', 'pip', 'install', 'PyQt6-WebEngine', '--upgrade'],
-                capture_output=True, text=True, timeout=300,
-                creationflags=0x08000000 if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-            )
-            if result.returncode == 0:
-                self.finished.emit(True, "安装成功！请重启应用程序后再次扫码登录。")
-            else:
-                err = (result.stderr or result.stdout or '').strip()[-200:]
-                self.finished.emit(False, f"安装失败：{err}")
+            # 使用国内镜像源，确保国内网络可正常下载
+            mirrors = [
+                ('清华源', 'https://pypi.tuna.tsinghua.edu.cn/simple'),
+                ('阿里源', 'https://mirrors.aliyun.com/pypi/simple'),
+                ('官方源', 'https://pypi.org/simple'),
+            ]
+            last_err = ''
+            for name, url in mirrors:
+                self.progress.emit(f"正在从{name}安装 PyQt6-WebEngine...")
+                result = subprocess.run(
+                    [python, '-m', 'pip', 'install', 'PyQt6-WebEngine', '--upgrade',
+                     '-i', url, '--trusted-host', url.split('//')[1].split('/')[0]],
+                    capture_output=True, text=True, timeout=300,
+                    creationflags=0x08000000 if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
+                if result.returncode == 0:
+                    self.finished.emit(True, "安装成功！请重启应用程序后再次扫码登录。")
+                    return
+                last_err = (result.stderr or result.stdout or '').strip()[-200:]
+            self.finished.emit(False, f"所有源均安装失败：{last_err}\n请手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
         except subprocess.TimeoutExpired:
-            self.finished.emit(False, "安装超时，请检查网络后重试，或手动执行：\npip install PyQt6-WebEngine")
+            self.finished.emit(False, "安装超时，请检查网络后重试，或手动执行：\npip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
         except Exception as e:
-            self.finished.emit(False, f"安装出错：{e}\n请手动执行：pip install PyQt6-WebEngine")
+            self.finished.emit(False, f"安装出错：{e}\n请手动执行：pip install PyQt6-WebEngine -i https://pypi.tuna.tsinghua.edu.cn/simple")
 
 
 class _InstallWebEngineDialog(QDialog):
