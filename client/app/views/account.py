@@ -538,6 +538,14 @@ class AccountView(QWidget):
     def load_data(self):
         self._load()
 
+    def cleanup(self):
+        """清理所有线程"""
+        for w in self._workers:
+            if w.isRunning():
+                w.quit()
+                w.wait(2000)
+        self._workers.clear()
+
     def _load(self):
         from ..api import _debug_log
         _debug_log(f"[AccountView] 加载账号列表: platform={self._current_platform}, page={self._page}")

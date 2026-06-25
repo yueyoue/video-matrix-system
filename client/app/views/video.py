@@ -1332,6 +1332,14 @@ class VideoView(QWidget):
         self._refresh_ai_assets(); self._refresh_mix(); self._refresh_publish()
         self._update_ai_model_label()
 
+    def cleanup(self):
+        """清理所有线程"""
+        for w in self._workers:
+            if w.isRunning():
+                w.quit()
+                w.wait(2000)
+        self._workers.clear()
+
     def _refresh_library(self):
         videos = dm.get_videos()
         self._lib_table.setRowCount(len(videos))

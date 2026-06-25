@@ -368,6 +368,14 @@ class ServerLogTab(QWidget):
     def load_data(self):
         self._on_search()
 
+    def cleanup(self):
+        """清理所有线程"""
+        for w in self._workers:
+            if w.isRunning():
+                w.quit()
+                w.wait(2000)
+        self._workers.clear()
+
 
 class LogView(QWidget):
     """日志中心 - 包含服务端日志和本地调试日志两个标签页"""
@@ -401,3 +409,13 @@ class LogView(QWidget):
         current = self._tabs.currentWidget()
         if hasattr(current, 'load_data'):
             current.load_data()
+
+    def cleanup(self):
+        """清理所有线程"""
+        for i in range(self._tabs.count()):
+            tab = self._tabs.widget(i)
+            if hasattr(tab, 'cleanup'):
+                try:
+                    tab.cleanup()
+                except Exception:
+                    pass

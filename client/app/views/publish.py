@@ -172,6 +172,14 @@ class PublishView(QWidget):
         self._load_rules()
         self._load_queue()
 
+    def cleanup(self):
+        """清理所有线程"""
+        for w in self._workers:
+            if w.isRunning():
+                w.quit()
+                w.wait(2000)
+        self._workers.clear()
+
     def _load_rules(self):
         w = _PublishWorker(api.get_publish_rules)
         w.done.connect(self._on_rules)

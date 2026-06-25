@@ -17,6 +17,15 @@ from ..widgets.toast import Toast
 from .. import api
 
 
+def _stop_worker(worker):
+    """安全停止一个 QThread worker"""
+    if worker is not None and worker.isRunning():
+        worker.quit()
+        if not worker.wait(3000):
+            worker.terminate()
+            worker.wait(1000)
+
+
 class _SyncWorker(QThread):
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
@@ -235,6 +244,7 @@ class AnalysisView(QWidget):
         from ..api import _debug_log
         params = self._get_params()
         _debug_log(f"[Analysis] 查询参数: {params}, 页码: {self._page}")
+        _stop_worker(self._worker)
         self._worker = _AnalysisWorker(params, self._page)
         self._worker.done.connect(self._on_data)
         self._worker.failed.connect(lambda m: (Toast.error(self, f"查询失败: {m}\n调试日志: ~/.video-matrix/debug.log"), _debug_log(f"[Analysis] 查询失败: {m}")))
@@ -323,6 +333,7 @@ class AnalysisView(QWidget):
         """触发数据同步"""
         self._sync_btn.setEnabled(False)
         self._sync_btn.setText("⏳ 同步中...")
+        _stop_worker(self._sync_worker)
         self._sync_worker = _SyncWorker()
         self._sync_worker.done.connect(self._on_sync_done)
         self._sync_worker.failed.connect(self._on_sync_failed)
@@ -343,3 +354,8 @@ class AnalysisView(QWidget):
 
     def load_data(self):
         self._on_query()
+
+    def cleanup(self):
+        """清理所有线程，窗口关闭时调用"""
+        _stop_worker(self._worker)
+        _stop_worker(self._sync_worker)

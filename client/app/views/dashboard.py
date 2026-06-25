@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
-    QTableWidgetItem, QFrame, QHeaderView, QPushButton, QScrollArea
+    QTableWidgetItem, QFrame, QHeaderView, QPushButton
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
@@ -13,6 +13,15 @@ from ..styles.theme import (
 from ..widgets.stat_card import StatCard
 from ..widgets.toast import Toast
 from .. import api
+
+
+def _stop_worker(worker):
+    """安全停止一个 QThread worker"""
+    if worker is not None and worker.isRunning():
+        worker.quit()
+        if not worker.wait(3000):
+            worker.terminate()
+            worker.wait(1000)
 
 
 class _DataWorker(QThread):
@@ -31,7 +40,7 @@ class _SyncWorker(QThread):
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
 
-    def __init__(self, account_id: int = 0):
+    def __init__(self, account_id=0):
         super().__init__()
         self.account_id = account_id
 
@@ -60,8 +69,9 @@ class DashboardView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._worker = None
+        self._data_worker = None
         self._sync_worker = None
+        self._sync_status_worker = None
         self._init_ui()
 
     def _init_ui(self):
@@ -159,19 +169,28 @@ class DashboardView(QWidget):
     def load_data(self):
         from ..api import _debug_log, BASE_URL
         _debug_log(f"[Dashboard] 开始加载数据, 服务器: {BASE_URL}")
-        self._worker = _DataWorker()
-        self._worker.done.connect(self._on_data)
-        self._worker.failed.connect(self._on_error)
-        self._worker.start()
 
-        # 同时加载同步状态
-        self._load_sync_status()
+        # 停止旧的 worker
+        _stop_worker(self._data_worker)
+        _stop_worker(self._sync_status_worker)
 
-    def _load_sync_status(self):
-        w = _SyncStatusWorker()
-        w.done.connect(self._on_sync_status)
-        w.failed.connect(lambda m: None)  # silent fail
-        w.start()
+        # 加载概览数据
+        self._data_worker = _DataWorker()
+        self._data_worker.done.connect(self._on_data)
+        self._data_worker.failed.connect(self._on_error)
+        self._data_worker.start()
+
+        # 加载同步状态
+        self._sync_status_worker = _SyncStatusWorker()
+        self._sync_status_worker.done.connect(self._on_sync_status)
+        self._sync_status_worker.failed.connect(lambda m: None)
+        self._sync_status_worker.start()
+
+    def cleanup(self):
+        """清理所有线程，窗口关闭时调用"""
+        _stop_worker(self._data_worker)
+        _stop_worker(self._sync_worker)
+        _stop_worker(self._sync_status_worker)
 
     def _on_sync_status(self, data: dict):
         d = data.get("data", data)
@@ -190,6 +209,7 @@ class DashboardView(QWidget):
         self._sync_info.setText("正在从已登录的视频平台拉取数据，请稍候...")
         self._sync_info.setStyleSheet(f"color: {WARNING}; font-size: 13px; border: none;")
 
+        _stop_worker(self._sync_worker)
         self._sync_worker = _SyncWorker()
         self._sync_worker.done.connect(self._on_sync_done)
         self._sync_worker.failed.connect(self._on_sync_failed)
@@ -220,7 +240,6 @@ class DashboardView(QWidget):
                 msg += f"\n⚠️ 以下账号同步失败: {errAccs}"
             Toast.success(self, msg)
 
-        # 刷新数据
         self.load_data()
 
     def _on_sync_failed(self, msg: str):
@@ -235,20 +254,16 @@ class DashboardView(QWidget):
         from ..api import _debug_log
         _debug_log(f"[Dashboard] 收到数据: {str(d)[:500]}")
 
-        # 更新统计卡片 - 优先显示视频数据统计
         self._card_accounts.set_value(str(d.get("accountCount", d.get("total_users", 0))))
 
-        # 今日发布统计
         todaySuccess = int(d.get("today_publish_success", 0))
         todayFailed = int(d.get("today_publish_failed", 0))
         todayTotal = todaySuccess + todayFailed
         self._card_publish.set_value(str(todayTotal))
 
-        # 视频数据量（从 video_data 表）
         videoDataCount = d.get("video_data_count", 0)
         self._card_videos.set_value(str(videoDataCount))
 
-        # 总播放量（从 video_data 表或 platform_account 汇总）
         totalPlays = d.get("total_plays", 0)
         if totalPlays > 0:
             if totalPlays >= 10000:
@@ -258,7 +273,6 @@ class DashboardView(QWidget):
         else:
             self._card_plays.set_value("0")
 
-        # recent records
         records = d.get("recentPublish", d.get("recent", []))
         self._recent_table.setRowCount(len(records))
         for i, r in enumerate(records):
@@ -274,9 +288,7 @@ class DashboardView(QWidget):
                 item.setForeground(QColor(DANGER))
             self._recent_table.setItem(i, 4, item)
 
-        # alerts
         alerts = d.get("alerts", [])
-        # clear old alerts
         while self._alert_list.count():
             child = self._alert_list.takeAt(0)
             if child.widget():

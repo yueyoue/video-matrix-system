@@ -194,3 +194,18 @@ class MainWindow(QMainWindow):
         self._load_user_info()
         self._sidebar.set_active("dashboard")
         self._on_menu_changed("dashboard")
+
+    def closeEvent(self, event):
+        """关闭窗口时清理所有工作线程"""
+        # 清理各页面的线程
+        for key, page in self._pages.items():
+            if hasattr(page, 'cleanup'):
+                try:
+                    page.cleanup()
+                except Exception:
+                    pass
+        # 清理 user info worker
+        if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(2000)
+        super().closeEvent(event)
