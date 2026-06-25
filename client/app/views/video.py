@@ -1750,11 +1750,21 @@ class VideoView(QWidget):
         if row < 0: Toast.warning(self, "请选择一行"); return
         groups = dm.get_cut_groups()
         if row < len(groups) and groups[row]["status"] == "pending":
-            self._cut_one(groups[row]["id"])
+            # 用当前 UI 的裁切规则更新组
+            gid = groups[row]["id"]
+            mode = "segments" if self._cut_mode.currentIndex() == 0 else "duration"
+            value = self._cut_val.value()
+            dm.update_cut_group_rule(gid, mode, value)
+            self._cut_one(gid)
 
     def _cut_all(self):
+        # 用当前 UI 的裁切规则更新所有待裁切组
+        mode = "segments" if self._cut_mode.currentIndex() == 0 else "duration"
+        value = self._cut_val.value()
         for g in dm.get_cut_groups():
-            if g["status"] == "pending": self._cut_one(g["id"])
+            if g["status"] == "pending":
+                dm.update_cut_group_rule(g["id"], mode, value)
+                self._cut_one(g["id"])
 
     def _del_cut(self, gid):
         if QMessageBox.question(self, "确认", "删除此裁切组及篮子？") == QMessageBox.StandardButton.Yes:

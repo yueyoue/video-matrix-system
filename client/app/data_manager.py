@@ -218,6 +218,16 @@ def update_cut_group_status(group_id: str, status: str, progress: int = None):
     _save_db(db)
 
 
+def update_cut_group_rule(group_id: str, cut_mode: str, cut_value: int):
+    """更新裁切组的裁切规则"""
+    db = _load_db()
+    for g in db.get("cut_groups", []):
+        if g["id"] == group_id:
+            g["cut_rule"] = {"mode": cut_mode, "value": cut_value}
+            break
+    _save_db(db)
+
+
 def delete_cut_group(group_id: str) -> bool:
     """删除裁切组及其篮子"""
     db = _load_db()
