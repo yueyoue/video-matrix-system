@@ -346,3 +346,18 @@ def export_logs(params: dict = None) -> bytes:
     if resp.status_code >= 400:
         _handle(resp)
     return resp.content
+
+
+# ── Scraper / Data Sync ──────────────────────────────────────
+def sync_video_data(account_id: int = 0) -> dict:
+    """同步视频数据 - 从已登录平台爬取"""
+    body = {}
+    if account_id > 0:
+        body["account_id"] = account_id
+    return _handle(requests.post(_api_url("/scraper/sync"), headers=_headers(),
+                                 json=body, timeout=120))
+
+
+def get_sync_status() -> dict:
+    """获取同步状态"""
+    return _handle(requests.get(_api_url("/scraper/status"), headers=_headers(), timeout=_TIMEOUT))

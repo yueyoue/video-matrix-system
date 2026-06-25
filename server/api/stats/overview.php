@@ -27,6 +27,25 @@ $r['success_rate'] = $total > 0 ? round($r['today_publish_success'] / $total * 1
 $stmt = $pdo->query("SELECT COUNT(*) FROM " . table('platform_account'));
 $r['accountCount'] = (int)$stmt->fetchColumn();
 
+// 视频数据统计（从 video_data 表汇总）
+$stmt = $pdo->query("SELECT COUNT(*) FROM " . table('video_data'));
+$r['video_data_count'] = (int)$stmt->fetchColumn();
+
+$stmt = $pdo->query("SELECT COALESCE(SUM(plays), 0) AS total_plays, COALESCE(SUM(likes), 0) AS total_likes, COALESCE(SUM(comments), 0) AS total_comments FROM " . table('video_data'));
+$videoStats = $stmt->fetch();
+$r['total_plays'] = (int)($videoStats['total_plays'] ?? 0);
+$r['total_likes'] = (int)($videoStats['total_likes'] ?? 0);
+$r['total_comments'] = (int)($videoStats['total_comments'] ?? 0);
+
+// 账号维度汇总（works_count, total_plays）
+$stmt = $pdo->query("SELECT COALESCE(SUM(works_count), 0) AS total_works, COALESCE(SUM(total_plays), 0) AS acc_total_plays FROM " . table('platform_account'));
+$accStats = $stmt->fetch();
+$r['total_works'] = (int)($accStats['total_works'] ?? 0);
+// 如果 video_data 没数据但 platform_account 有，用 platform_account 的
+if ($r['total_plays'] == 0 && (int)($accStats['acc_total_plays'] ?? 0) > 0) {
+    $r['total_plays'] = (int)($accStats['acc_total_plays'] ?? 0);
+}
+
 // 最近发布记录（最近10条）
 $stmt = $pdo->prepare("
     SELECT pr.platform, pr.account_name AS accountName, pr.video_title AS videoTitle,
@@ -61,6 +80,25 @@ foreach ($expiredAccounts as $acc) {
         'text' => "Cookie已过期，请重新扫码登录",
     ];
 }
+
+// 如果没有任何视频数据，添加提示
+if ($r['video_data_count'] == 0) {
+    $activeAccounts = 0;
+    $stmt = $pdo->query("SELECT COUNT(*) FROM " . table('platform_account') . " WHERE status = 'active' AND cookie IS NOT NULL AND cookie != ''");
+    $activeAccounts = (int)$stmt->fetchColumn();
+    if ($activeAccounts > 0) {
+        $alerts[] = [
+            'message' => "视频数据为空，请点击「同步平台数据」拉取",
+            'text' => "已登录 {$activeAccounts} 个账号，但尚未同步视频数据",
+        ];
+    } else {
+        $alerts[] = [
+            'message' => "暂无已登录的平台账号",
+            'text' => "请先在「账号管理」中添加并登录平台账号",
+        ];
+    }
+}
+
 $r['alerts'] = $alerts;
 
 success($r);

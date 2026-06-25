@@ -35,6 +35,20 @@ if (function_exists('success')) {
                 $platformName = match($acc['platform']) { 'douyin'=>'抖音', 'kuaishou'=>'快手', 'xiaohongshu'=>'小红书', 'weixin'=>'视频号', default=>$acc['platform'] };
                 $alerts[] = ['message'=>"{$platformName}账号 {$acc['nickname']} 登录失效", 'text'=>'Cookie已过期，请重新扫码登录'];
             }
+            // 视频数据统计
+            $r['video_data_count'] = (int)$pdo->query('SELECT COUNT(*) FROM ' . table('video_data'))->fetchColumn();
+            $vStats = $pdo->query('SELECT COALESCE(SUM(plays),0) AS tp, COALESCE(SUM(likes),0) AS tl FROM ' . table('video_data'))->fetch();
+            $r['total_plays'] = (int)($vStats['tp'] ?? 0);
+            $r['total_likes'] = (int)($vStats['tl'] ?? 0);
+            $aStats = $pdo->query('SELECT COALESCE(SUM(works_count),0) AS tw, COALESCE(SUM(total_plays),0) AS atp FROM ' . table('platform_account'))->fetch();
+            $r['total_works'] = (int)($aStats['tw'] ?? 0);
+            if ($r['total_plays'] == 0 && (int)($aStats['atp'] ?? 0) > 0) $r['total_plays'] = (int)($aStats['atp'] ?? 0);
+            // 无数据提示
+            if ($r['video_data_count'] == 0) {
+                $actAcc = (int)$pdo->query('SELECT COUNT(*) FROM ' . table('platform_account') . " WHERE status='active' AND cookie IS NOT NULL AND cookie != ''")->fetchColumn();
+                if ($actAcc > 0) $alerts[] = ['message'=>'视频数据为空，请点击「同步平台数据」拉取','text'=>'已登录 '.$actAcc.' 个账号，但尚未同步视频数据'];
+                else $alerts[] = ['message'=>'暂无已登录的平台账号','text'=>'请先在「账号管理」中添加并登录平台账号'];
+            }
             $r['alerts'] = $alerts;
 
             success($r);
@@ -172,6 +186,21 @@ switch ($action) {
             $alerts[]=['message'=>"{$pn}账号 {$acc['nickname']} 登录失效",'text'=>'Cookie已过期，请重新扫码登录'];
         }
         $r['alerts']=$alerts;
+
+        // 视频数据统计
+        $r['video_data_count']=(int)$pdo->query('SELECT COUNT(*) FROM '._tbl_s('video_data'))->fetchColumn();
+        $vSt=$pdo->query('SELECT COALESCE(SUM(plays),0) AS tp, COALESCE(SUM(likes),0) AS tl FROM '._tbl_s('video_data'))->fetch();
+        $r['total_plays']=(int)($vSt['tp']??0);
+        $r['total_likes']=(int)($vSt['tl']??0);
+        $aSt=$pdo->query('SELECT COALESCE(SUM(works_count),0) AS tw, COALESCE(SUM(total_plays),0) AS atp FROM '._tbl_s('platform_account'))->fetch();
+        $r['total_works']=(int)($aSt['tw']??0);
+        if($r['total_plays']==0&&(int)($aSt['atp']??0)>0)$r['total_plays']=(int)($aSt['atp']??0);
+        if($r['video_data_count']==0){
+            $actA=(int)$pdo->query('SELECT COUNT(*) FROM '._tbl_s('platform_account')." WHERE status='active' AND cookie IS NOT NULL AND cookie != ''")->fetchColumn();
+            if($actA>0)$alerts[]=['message'=>'视频数据为空，请点击「同步平台数据」拉取','text'=>'已登录 '.$actA.' 个账号，但尚未同步视频数据'];
+            else $alerts[]=['message'=>'暂无已登录的平台账号','text'=>'请先在「账号管理」中添加并登录平台账号'];
+            $r['alerts']=$alerts;
+        }
 
         _ok_s($r);
         break;

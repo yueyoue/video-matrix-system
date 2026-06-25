@@ -17,6 +17,18 @@ from ..widgets.toast import Toast
 from .. import api
 
 
+class _SyncWorker(QThread):
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            result = api.sync_video_data()
+            self.done.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class _AnalysisWorker(QThread):
     done = pyqtSignal(dict)
     failed = pyqtSignal(str)
@@ -46,6 +58,7 @@ class AnalysisView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._sync_worker = None
         self._page = 1
         self._total_pages = 1
         self._init_ui()
@@ -108,6 +121,15 @@ class AnalysisView(QWidget):
         fl.addWidget(export_btn)
 
         fl.addStretch()
+
+        # sync button
+        self._sync_btn = QPushButton("📡 同步数据")
+        self._sync_btn.setStyleSheet(BTN_PRIMARY)
+        self._sync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sync_btn.setFixedHeight(34)
+        self._sync_btn.clicked.connect(self._on_sync)
+        fl.addWidget(self._sync_btn)
+
         layout.addWidget(filter_frame)
 
         # ── Summary cards ──────────────────────────────────────
@@ -296,6 +318,28 @@ class AnalysisView(QWidget):
             Toast.success(self, f"导出成功: {path}")
         except Exception as e:
             Toast.error(self, f"导出失败: {e}")
+
+    def _on_sync(self):
+        """触发数据同步"""
+        self._sync_btn.setEnabled(False)
+        self._sync_btn.setText("⏳ 同步中...")
+        self._sync_worker = _SyncWorker()
+        self._sync_worker.done.connect(self._on_sync_done)
+        self._sync_worker.failed.connect(self._on_sync_failed)
+        self._sync_worker.start()
+
+    def _on_sync_done(self, data: dict):
+        d = data.get("data", data)
+        totalNew = d.get("total_new_records", 0)
+        self._sync_btn.setEnabled(True)
+        self._sync_btn.setText("📡 同步数据")
+        Toast.success(self, f"同步完成！新增 {totalNew} 条视频数据")
+        self._on_query()
+
+    def _on_sync_failed(self, msg: str):
+        self._sync_btn.setEnabled(True)
+        self._sync_btn.setText("📡 同步数据")
+        Toast.error(self, f"同步失败: {msg}")
 
     def load_data(self):
         self._on_query()

@@ -1,4 +1,4 @@
-"""Dashboard view – overview stats, recent publishes, alerts."""
+"""Dashboard view – overview stats, recent publishes, alerts, and data sync."""
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
-    DANGER, WARNING, BORDER_COLOR, TABLE_STYLE, BTN_PRIMARY_SM
+    DANGER, WARNING, BORDER_COLOR, TABLE_STYLE, BTN_PRIMARY_SM, BTN_PRIMARY, BTN_DEFAULT
 )
 from ..widgets.stat_card import StatCard
 from ..widgets.toast import Toast
@@ -27,12 +27,41 @@ class _DataWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _SyncWorker(QThread):
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, account_id: int = 0):
+        super().__init__()
+        self.account_id = account_id
+
+    def run(self):
+        try:
+            result = api.sync_video_data(self.account_id)
+            self.done.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class _SyncStatusWorker(QThread):
+    done = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def run(self):
+        try:
+            result = api.get_sync_status()
+            self.done.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class DashboardView(QWidget):
     """Data overview page."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._sync_worker = None
         self._init_ui()
 
     def _init_ui(self):
@@ -40,16 +69,39 @@ class DashboardView(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
+        # ── Sync bar ──────────────────────────────────────────
+        sync_bar = QFrame()
+        sync_bar.setStyleSheet(f"QFrame {{{CARD_STYLE} padding: 12px 16px;}}")
+        sb_layout = QHBoxLayout(sync_bar)
+        sb_layout.setSpacing(12)
+
+        sync_icon = QLabel("🔄")
+        sync_icon.setStyleSheet("font-size: 16px; border: none;")
+        sb_layout.addWidget(sync_icon)
+
+        self._sync_info = QLabel("点击同步按钮从已登录的视频平台拉取最新数据")
+        self._sync_info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px; border: none;")
+        sb_layout.addWidget(self._sync_info, 1)
+
+        self._sync_btn = QPushButton("📡 同步平台数据")
+        self._sync_btn.setStyleSheet(BTN_PRIMARY)
+        self._sync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sync_btn.setFixedHeight(36)
+        self._sync_btn.clicked.connect(self._on_sync)
+        sb_layout.addWidget(self._sync_btn)
+
+        layout.addWidget(sync_bar)
+
         # ── Stat cards row ─────────────────────────────────────
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(16)
 
-        self._card_gen = StatCard("生成视频数", "0", "🎬", PRIMARY)
-        self._card_ok = StatCard("发布成功数", "0", "✅", SUCCESS)
-        self._card_fail = StatCard("发布失败数", "0", "❌", DANGER)
-        self._card_acc = StatCard("管理账号数", "0", "👥", WARNING)
+        self._card_videos = StatCard("视频数据量", "0", "📊", PRIMARY)
+        self._card_plays = StatCard("总播放量", "0", "▶️", SUCCESS)
+        self._card_accounts = StatCard("管理账号数", "0", "👥", WARNING)
+        self._card_publish = StatCard("今日发布", "0", "📤", DANGER)
 
-        for c in [self._card_gen, self._card_ok, self._card_fail, self._card_acc]:
+        for c in [self._card_videos, self._card_plays, self._card_accounts, self._card_publish]:
             cards_layout.addWidget(c)
         layout.addLayout(cards_layout)
 
@@ -112,13 +164,99 @@ class DashboardView(QWidget):
         self._worker.failed.connect(self._on_error)
         self._worker.start()
 
+        # 同时加载同步状态
+        self._load_sync_status()
+
+    def _load_sync_status(self):
+        w = _SyncStatusWorker()
+        w.done.connect(self._on_sync_status)
+        w.failed.connect(lambda m: None)  # silent fail
+        w.start()
+
+    def _on_sync_status(self, data: dict):
+        d = data.get("data", data)
+        total = d.get("total_videos", 0)
+        lastSync = d.get("last_sync", "未同步")
+        activeAccs = d.get("active_accounts", 0)
+        if lastSync and lastSync != "未同步":
+            self._sync_info.setText(f"📊 已同步 {total} 条视频数据 | 活跃账号 {activeAccs} 个 | 上次同步: {lastSync}")
+        else:
+            self._sync_info.setText(f"📊 已同步 {total} 条视频数据 | 活跃账号 {activeAccs} 个 | 尚未同步过数据")
+
+    def _on_sync(self):
+        """触发数据同步"""
+        self._sync_btn.setEnabled(False)
+        self._sync_btn.setText("⏳ 同步中...")
+        self._sync_info.setText("正在从已登录的视频平台拉取数据，请稍候...")
+        self._sync_info.setStyleSheet(f"color: {WARNING}; font-size: 13px; border: none;")
+
+        self._sync_worker = _SyncWorker()
+        self._sync_worker.done.connect(self._on_sync_done)
+        self._sync_worker.failed.connect(self._on_sync_failed)
+        self._sync_worker.start()
+
+    def _on_sync_done(self, data: dict):
+        d = data.get("data", data)
+        totalNew = d.get("total_new_records", 0)
+        syncedAccs = d.get("synced_accounts", 0)
+        errors = d.get("errors", [])
+        results = d.get("results", [])
+
+        self._sync_btn.setEnabled(True)
+        self._sync_btn.setText("📡 同步平台数据")
+
+        if errors and not results:
+            errMsg = "; ".join([e.get("error", str(e)) for e in errors[:3]])
+            self._sync_info.setText(f"❌ 同步失败: {errMsg}")
+            self._sync_info.setStyleSheet(f"color: {DANGER}; font-size: 13px; border: none;")
+            Toast.error(self, f"同步失败: {errMsg}")
+        else:
+            totalPlays = sum(r.get("plays", 0) for r in results)
+            self._sync_info.setText(f"✅ 同步完成！{syncedAccs} 个账号，新增 {totalNew} 条数据，总播放 {totalPlays:,}")
+            self._sync_info.setStyleSheet(f"color: {SUCCESS}; font-size: 13px; border: none; font-weight: 600;")
+            msg = f"同步完成！新增 {totalNew} 条视频数据"
+            if errors:
+                errAccs = ", ".join([e.get("account", "") for e in errors[:3]])
+                msg += f"\n⚠️ 以下账号同步失败: {errAccs}"
+            Toast.success(self, msg)
+
+        # 刷新数据
+        self.load_data()
+
+    def _on_sync_failed(self, msg: str):
+        self._sync_btn.setEnabled(True)
+        self._sync_btn.setText("📡 同步平台数据")
+        self._sync_info.setText(f"❌ 同步失败: {msg}")
+        self._sync_info.setStyleSheet(f"color: {DANGER}; font-size: 13px; border: none;")
+        Toast.error(self, f"同步失败: {msg}")
+
     def _on_data(self, data: dict):
         d = data.get("data", data)
-        # 服务端返回 snake_case 字段名
-        self._card_gen.set_value(str(d.get("today_videos", 0)))
-        self._card_ok.set_value(str(d.get("today_publish_success", 0)))
-        self._card_fail.set_value(str(d.get("today_publish_failed", 0)))
-        self._card_acc.set_value(str(d.get("accountCount", d.get("total_users", 0))))
+        from ..api import _debug_log
+        _debug_log(f"[Dashboard] 收到数据: {str(d)[:500]}")
+
+        # 更新统计卡片 - 优先显示视频数据统计
+        self._card_accounts.set_value(str(d.get("accountCount", d.get("total_users", 0))))
+
+        # 今日发布统计
+        todaySuccess = int(d.get("today_publish_success", 0))
+        todayFailed = int(d.get("today_publish_failed", 0))
+        todayTotal = todaySuccess + todayFailed
+        self._card_publish.set_value(str(todayTotal))
+
+        # 视频数据量（从 video_data 表）
+        videoDataCount = d.get("video_data_count", 0)
+        self._card_videos.set_value(str(videoDataCount))
+
+        # 总播放量（从 video_data 表或 platform_account 汇总）
+        totalPlays = d.get("total_plays", 0)
+        if totalPlays > 0:
+            if totalPlays >= 10000:
+                self._card_plays.set_value(f"{totalPlays/10000:.1f}万")
+            else:
+                self._card_plays.set_value(str(totalPlays))
+        else:
+            self._card_plays.set_value("0")
 
         # recent records
         records = d.get("recentPublish", d.get("recent", []))
