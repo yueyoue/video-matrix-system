@@ -59,6 +59,7 @@ class WebViewLoginDialog(QDialog):
         self._cookie_str = ""
         self._login_detected = False
         self._check_timer = None
+        self._collected_cookies = []  # 通过 cookieAdded 收集的完整 cookie 数据
 
         platform_names = {
             "douyin": "抖音", "kuaishou": "快手",
@@ -220,10 +221,13 @@ class WebViewLoginDialog(QDialog):
                 return
 
     def _on_cookie_added(self, cookie):
-        """Cookie 添加时记录"""
+        """Cookie 添加时记录完整数据"""
         name = cookie.name().data().decode() if cookie.name() else ""
+        value = cookie.value().data().decode() if cookie.value() else ""
         domain = cookie.domain()
         self._known_cookies.add(f"{name}@{domain}")
+        if name and value:
+            self._collected_cookies.append(f"{name}={value}")
 
     def _on_manual_confirm(self):
         """用户手动确认登录完成"""
@@ -238,7 +242,11 @@ class WebViewLoginDialog(QDialog):
     def _extract_cookies(self):
         """提取当前所有 Cookie"""
         self._status_label.setText("🔑 正在提取 Cookie...")
-        self._cookie_store.getAllCookies(self._on_cookies_ready)
+        try:
+            self._cookie_store.getAllCookies(self._on_cookies_ready)
+        except AttributeError:
+            # PyQt6 版本不支持 getAllCookies，使用通过 cookieAdded 收集的数据
+            self._on_cookies_ready_from_signal()
 
     def _on_cookies_ready(self, cookies):
         """Cookie 提取完成回调"""
@@ -249,6 +257,42 @@ class WebViewLoginDialog(QDialog):
             domain = cookie.domain()
             if name and value:
                 cookie_parts.append(f"{name}={value}")
+
+        self._cookie_str = "; ".join(cookie_parts)
+
+        if not self._cookie_str:
+            Toast.warning(self, "未获取到Cookie，请确认已在页面中完成登录")
+            self._status_label.setText("⚠️ 未获取到Cookie，请确认登录状态")
+            return
+
+        # 记录登录操作
+        if self._nickname:
+            anti_ban.log_operation(
+                f"{self._platform}_{self._nickname}",
+                self._platform, "login"
+            )
+
+        self._status_label.setText(f"✅ 成功提取 {len(cookie_parts)} 个Cookie")
+
+        # 发射信号
+        self.login_success.emit({
+            "cookies": self._cookie_str,
+            "platform": self._platform,
+            "nickname": self._nickname,
+            "cookie_count": len(cookie_parts),
+        })
+
+        # 延迟关闭，让用户看到提示
+        QTimer.singleShot(1500, self.accept)
+
+    def _on_cookies_ready_from_signal(self):
+        """使用通过 cookieAdded 信号收集的 Cookie 数据"""
+        # 去重并保留最后的值
+        seen = {}
+        for c in self._collected_cookies:
+            name = c.split('=', 1)[0] if '=' in c else c
+            seen[name] = c
+        cookie_parts = list(seen.values())
 
         self._cookie_str = "; ".join(cookie_parts)
 
