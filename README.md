@@ -55,3 +55,4 @@ location / {
 - **前端**: Vue 3 + Vite + Tailwind CSS
 - **客户端**: Python 3.11 + PyQt6
 - **部署**: 宝塔面板一键安装
+#  - 确认修复版本
