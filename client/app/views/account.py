@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QFrame, QHeaderView, QPushButton, QDialog,
     QLineEdit, QFormLayout, QComboBox, QCheckBox, QTabWidget,
-    QMessageBox, QSpinBox, QScrollArea, QTextEdit
+    QMessageBox, QSpinBox, QScrollArea, QTextEdit, QProgressBar
 )
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS,
@@ -37,6 +37,117 @@ class _AccountWorker(QThread):
             self.done.emit(result)
         except Exception as e:
             self.failed.emit(str(e))
+
+
+class _InstallWorker(QThread):
+    """后台安装 PyQt6-WebEngine 的工作线程"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)  # success, message
+
+    def run(self):
+        import subprocess
+        import sys
+        try:
+            self.progress.emit("正在安装 PyQt6-WebEngine，请稍候...")
+            python = sys.executable
+            result = subprocess.run(
+                [python, '-m', 'pip', 'install', 'PyQt6-WebEngine', '--upgrade'],
+                capture_output=True, text=True, timeout=300,
+                creationflags=0x08000000 if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+            )
+            if result.returncode == 0:
+                self.finished.emit(True, "安装成功！请重启应用程序后再次扫码登录。")
+            else:
+                err = (result.stderr or result.stdout or '').strip()[-200:]
+                self.finished.emit(False, f"安装失败：{err}")
+        except subprocess.TimeoutExpired:
+            self.finished.emit(False, "安装超时，请检查网络后重试，或手动执行：\npip install PyQt6-WebEngine")
+        except Exception as e:
+            self.finished.emit(False, f"安装出错：{e}\n请手动执行：pip install PyQt6-WebEngine")
+
+
+class _InstallWebEngineDialog(QDialog):
+    """PyQt6-WebEngine 安装对话框"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("安装 WebView 组件")
+        self.setFixedSize(460, 260)
+        self.setStyleSheet(f"QDialog {{ background: {BG_COLOR}; }}")
+        self._worker = None
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("📦 安装 WebView 组件")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {TEXT_COLOR};")
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "扫码登录需要 PyQt6-WebEngine 组件。\n"
+            "点击下方按钮自动安装（需要联网，约 1-3 分钟）。"
+        )
+        desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 13px;")
+        self._status_label.setWordWrap(True)
+        layout.addWidget(self._status_label)
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 0)  # indeterminate
+        self._progress.setFixedHeight(6)
+        self._progress.setVisible(False)
+        layout.addWidget(self._progress)
+
+        layout.addStretch()
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet(BTN_DEFAULT)
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        self._install_btn = QPushButton("⚡ 一键安装")
+        self._install_btn.setStyleSheet(BTN_PRIMARY)
+        self._install_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._install_btn.clicked.connect(self._start_install)
+        btn_layout.addWidget(self._install_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _start_install(self):
+        self._install_btn.setEnabled(False)
+        self._install_btn.setText("安装中...")
+        self._progress.setVisible(True)
+        self._status_label.setText("正在安装，请耐心等待...")
+        self._status_label.setStyleSheet(f"color: {WARNING}; font-size: 13px;")
+
+        self._worker = _InstallWorker()
+        self._worker.progress.connect(lambda m: self._status_label.setText(m))
+        self._worker.finished.connect(self._on_install_done)
+        self._worker.start()
+
+    def _on_install_done(self, success: bool, message: str):
+        self._progress.setVisible(False)
+        if success:
+            self._status_label.setText(f"✅ {message}")
+            self._status_label.setStyleSheet(f"color: {SUCCESS}; font-size: 13px; font-weight: 600;")
+            self._install_btn.setText("完成")
+            self._install_btn.clicked.connect(self.accept)
+        else:
+            self._status_label.setText(f"❌ {message}")
+            self._status_label.setStyleSheet(f"color: {DANGER}; font-size: 13px;")
+            self._install_btn.setText("重试")
+            self._install_btn.setEnabled(True)
+            self._install_btn.clicked.disconnect()
+            self._install_btn.clicked.connect(self._start_install)
 
 
 class _AddAccountDialog(QDialog):
@@ -177,11 +288,16 @@ class _AddAccountDialog(QDialog):
             dlg.login_success.connect(self._on_login_success)
             dlg.exec()
         except ImportError:
-            Toast.error(self, "WebView 组件未安装，请安装 PyQt6-WebEngine:\npip install PyQt6-WebEngine")
+            # 弹出安装对话框
+            install_dlg = _InstallWebEngineDialog(self)
+            if install_dlg.exec() == QDialog.DialogCode.Accepted:
+                Toast.info(self, "安装完成，请重启应用后再次扫码登录")
         except Exception as e:
             err_msg = str(e)
             if 'QtWebEngineWidgets' in err_msg or 'ShareOpenGLContexts' in err_msg:
-                Toast.error(self, "WebView 初始化失败，请重启应用或重装 PyQt6-WebEngine")
+                install_dlg = _InstallWebEngineDialog(self)
+                if install_dlg.exec() == QDialog.DialogCode.Accepted:
+                    Toast.info(self, "安装完成，请重启应用后再次扫码登录")
             else:
                 Toast.error(self, f"打开登录窗口失败: {err_msg}")
 
