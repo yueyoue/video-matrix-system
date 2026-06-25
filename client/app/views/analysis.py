@@ -84,7 +84,7 @@ class AnalysisView(QWidget):
         fl.setSpacing(8)
 
         # quick date buttons
-        for label, days in [("今日", 0), ("近7天", 7), ("30天", 30)]:
+        for label, days in [("不限", -1), ("今日", 0), ("近7天", 7), ("30天", 30)]:
             btn = QPushButton(label)
             btn.setStyleSheet(BTN_DEFAULT)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -95,7 +95,7 @@ class AnalysisView(QWidget):
         fl.addWidget(QLabel("从"))
         self._date_from = QDateEdit()
         self._date_from.setCalendarPopup(True)
-        self._date_from.setDate(QDate.currentDate().addDays(-7))
+        self._date_from.setDate(QDate.currentDate().addDays(-365))
         self._date_from.setStyleSheet(INPUT_STYLE)
         self._date_from.setFixedHeight(34)
         fl.addWidget(self._date_from)
@@ -107,6 +107,8 @@ class AnalysisView(QWidget):
         self._date_to.setStyleSheet(INPUT_STYLE)
         self._date_to.setFixedHeight(34)
         fl.addWidget(self._date_to)
+
+        self._date_filter_enabled = False  # 默认不筛选日期
 
         fl.addWidget(QLabel("平台"))
         self._platform_combo = QComboBox()
@@ -217,21 +219,29 @@ class AnalysisView(QWidget):
         layout.addWidget(tab_widget, 1)
 
     def _set_date_range(self, days: int):
-        today = QDate.currentDate()
-        self._date_to.setDate(today)
-        if days == 0:
-            self._date_from.setDate(today)
+        if days == -1:
+            # 不限：设为很早的日期
+            self._date_from.setDate(QDate(2020, 1, 1))
+            self._date_to.setDate(QDate.currentDate())
+            self._date_filter_enabled = False
         else:
-            self._date_from.setDate(today.addDays(-days))
+            self._date_filter_enabled = True
+            today = QDate.currentDate()
+            self._date_to.setDate(today)
+            if days == 0:
+                self._date_from.setDate(today)
+            else:
+                self._date_from.setDate(today.addDays(-days))
 
     def _get_params(self) -> dict:
         platform_map = {"全部": "", "抖音": "douyin", "快手": "kuaishou",
                         "小红书": "xiaohongshu", "视频号": "weixin"}
         platform = platform_map.get(self._platform_combo.currentText(), "")
-        params = {
-            "startDate": self._date_from.date().toString("yyyy-MM-dd"),
-            "endDate": self._date_to.date().toString("yyyy-MM-dd"),
-        }
+        params = {}
+        # 只在用户主动设置了日期筛选时才传日期参数
+        if self._date_filter_enabled:
+            params["startDate"] = self._date_from.date().toString("yyyy-MM-dd")
+            params["endDate"] = self._date_to.date().toString("yyyy-MM-dd")
         if platform:
             params["platform"] = platform
         return params

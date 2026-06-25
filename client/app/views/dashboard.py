@@ -231,10 +231,14 @@ class DashboardView(QWidget):
             self._sync_info.setStyleSheet(f"color: {DANGER}; font-size: 13px; border: none;")
             Toast.error(self, f"同步失败: {errMsg}")
         else:
+            totalFound = sum(r.get("found", r.get("total", 0)) for r in results)
             totalPlays = sum(r.get("plays", 0) for r in results)
-            self._sync_info.setText(f"✅ 同步完成！{syncedAccs} 个账号，新增 {totalNew} 条数据，总播放 {totalPlays:,}")
+            totalUpdated = sum(r.get("updated", 0) for r in results)
+            self._sync_info.setText(f"✅ 同步完成！{syncedAccs} 个账号，获取 {totalFound} 个视频，新增 {totalNew} 条，更新 {totalUpdated} 条")
             self._sync_info.setStyleSheet(f"color: {SUCCESS}; font-size: 13px; border: none; font-weight: 600;")
-            msg = f"同步完成！新增 {totalNew} 条视频数据"
+            msg = f"同步完成！获取 {totalFound} 个视频，新增 {totalNew} 条数据"
+            if totalFound > 0 and totalNew == 0:
+                msg += "\n（视频数据已存在，已更新为最新数据）"
             if errors:
                 errAccs = ", ".join([e.get("account", "") for e in errors[:3]])
                 msg += f"\n⚠️ 以下账号同步失败: {errAccs}"

@@ -86,7 +86,7 @@ function syncVideoData()
             }
 
             if (empty($videos)) {
-                $results[] = ['account' => $nickname, 'platform' => $platform, 'synced' => 0, 'message' => '未获取到视频数据'];
+                $results[] = ['account' => $nickname, 'platform' => $platform, 'synced' => 0, 'found' => 0, 'message' => '未获取到视频数据，请检查Cookie是否有效'];
                 continue;
             }
 
@@ -125,8 +125,9 @@ function syncVideoData()
 
             // 更新账号统计
             $worksCount = count($videos);
-            $pdo->prepare("UPDATE " . table('platform_account') . " SET works_count = ?, total_plays = ?, status = 'active', last_login = NOW() WHERE id = ?")
-                ->execute([$worksCount, $totalPlays, $accId]);
+            $todayPublish = $syncedCount . '/3';
+            $pdo->prepare("UPDATE " . table('platform_account') . " SET works_count = ?, total_plays = ?, today_publish = ?, status = 'active', last_login = NOW() WHERE id = ?")
+                ->execute([$worksCount, $totalPlays, $todayPublish, $accId]);
 
             $totalSynced += $syncedCount;
             $results[] = [
@@ -134,6 +135,7 @@ function syncVideoData()
                 'platform' => $platform,
                 'synced'   => $syncedCount,
                 'updated'  => $worksCount - $syncedCount,
+                'found'    => $worksCount,
                 'total'    => $worksCount,
                 'plays'    => $totalPlays,
             ];
@@ -221,9 +223,19 @@ function httpGet(string $url, array $headers, string $cookie, int $timeout = 15)
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error    = curl_error($ch);
+    $curlErr  = curl_errno($ch);
     curl_close($ch);
 
-    if ($response === false || $httpCode >= 400) {
+    // 记录请求日志
+    $logDir = dirname(dirname(__DIR__)) . '/logs';
+    if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
+    $logFile = $logDir . '/scraper.log';
+    $logMsg = date('Y-m-d H:i:s') . " GET {$url} => HTTP {$httpCode} (curl_err={$curlErr})\n";
+    if ($error) $logMsg .= "  curl_error: {$error}\n";
+    if ($response) $logMsg .= "  response: " . substr($response, 0, 500) . "\n";
+    @file_put_contents($logFile, $logMsg, FILE_APPEND | LOCK_EX);
+
+    if ($curlErr !== 0 || $httpCode >= 400) {
         return null;
     }
 
