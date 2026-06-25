@@ -7,6 +7,22 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# When running as PyInstaller exe, try to find system-installed packages
+# (e.g. PyQt6-WebEngine installed via pip)
+if getattr(sys, 'frozen', False):
+    # Running as exe - look for system Python's site-packages
+    import glob
+    for sp in sorted(glob.glob(r'C:\Users\*\AppData\Local\Programs\Python\*\Lib\site-packages'), reverse=True):
+        if sp not in sys.path:
+            sys.path.append(sp)
+    for sp in sorted(glob.glob(r'C:\Python*\Lib\site-packages'), reverse=True):
+        if sp not in sys.path:
+            sys.path.append(sp)
+    # Also check common conda/miniconda paths
+    for sp in sorted(glob.glob(r'C:\Users\*\miniconda3\Lib\site-packages'), reverse=True):
+        if sp not in sys.path:
+            sys.path.append(sp)
+
 # PyQt6-WebEngine must be imported BEFORE QApplication is created
 # otherwise Qt raises: "QtWebEngineWidgets must be imported before QApplication"
 try:
