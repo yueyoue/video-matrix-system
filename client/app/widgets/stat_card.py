@@ -3,11 +3,9 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
+    QVBoxLayout, QHBoxLayout, QLabel, QFrame
 )
-from ..styles.theme import (
-    CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY, SUCCESS, WARNING, DANGER
-)
+from ..styles.theme import PRIMARY
 
 
 class StatCard(QFrame):
@@ -16,66 +14,36 @@ class StatCard(QFrame):
     def __init__(self, title: str, value: str = "0", icon: str = "📊",
                  color: str = PRIMARY, change: str = "", parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f"""
-            QFrame {{
-                {CARD_STYLE}
-                padding: 20px;
-            }}
-            QFrame:hover {{
-                border-color: {color};
-            }}
-        """)
         self.setFixedHeight(120)
+        self.setStyleSheet(f"QFrame {{ background: white; border: 1px solid #E5E6EB; border-radius: 8px; }}")
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(16)
+        h = QHBoxLayout(self)
+        h.setContentsMargins(20, 16, 20, 16)
+        h.setSpacing(16)
 
-        # icon circle
-        icon_label = QLabel(icon)
-        icon_label.setFixedSize(48, 48)
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet(f"""
-            background: {color}18;
-            border-radius: 24px;
-            font-size: 22px;
-        """)
-        layout.addWidget(icon_label)
+        # icon
+        ic = QLabel(icon)
+        ic.setFixedSize(48, 48)
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ic.setStyleSheet(f"background: {color}20; border-radius: 24px; font-size: 20px;")
+        h.addWidget(ic)
 
-        # text area
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(4)
+        # text column
+        col = QVBoxLayout()
+        col.setSpacing(6)
 
-        self._value_label = QLabel(str(value))
-        value_font = QFont()
-        value_font.setPointSize(20)
-        value_font.setBold(True)
-        self._value_label.setFont(value_font)
-        self._value_label.setStyleSheet(f"color: {TEXT_COLOR}; background: transparent;")
-        self._value_label.setMinimumWidth(60)
-        text_layout.addWidget(self._value_label)
+        self._val = QLabel(str(value))
+        self._val.setStyleSheet("QLabel { font-size: 24px; font-weight: bold; color: #333; }")
+        col.addWidget(self._val)
 
-        bottom = QHBoxLayout()
-        title_label = QLabel(title)
-        title_font = QFont()
-        title_font.setPointSize(10)
-        title_label.setFont(title_font)
-        title_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
-        bottom.addWidget(title_label)
+        row = QHBoxLayout()
+        lbl = QLabel(title)
+        lbl.setStyleSheet("QLabel { font-size: 12px; color: #999; }")
+        row.addWidget(lbl)
+        row.addStretch()
+        col.addLayout(row)
 
-        if change:
-            change_label = QLabel(change)
-            c = SUCCESS if not change.startswith("-") else DANGER
-            change_font = QFont()
-            change_font.setPointSize(9)
-            change_label.setFont(change_font)
-            change_label.setStyleSheet(f"color: {c}; background: transparent;")
-            bottom.addWidget(change_label)
-
-        bottom.addStretch()
-        text_layout.addLayout(bottom)
-        layout.addLayout(text_layout)
-        layout.addStretch()
+        h.addLayout(col, 1)
 
     def set_value(self, value: str):
-        self._value_label.setText(str(value))
+        self._val.setText(str(value))
