@@ -91,7 +91,8 @@ jobs:
       - name: Build exe
         run: |
           pip install pyinstaller PyQt6 PyQt6-WebEngine requests
-          pyinstaller --clean --noconfirm --onedir --windowed --name VideoMatrix --noconsole --collect-all PyQt6 --exclude-module PyQt6.Qt3D --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtQuick --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtRemoteObjects --exclude-module PyQt6.QtSensors --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtSvg --exclude-module PyQt6.QtTest --exclude-module PyQt6.QtHelp --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtShaderTools --exclude-module PyQt6.QtSpatialAudio --exclude-module PyQt6.QtHttpServer --exclude-module PyQt6.QtPdf --exclude-module PyQt6.QtStateMachine --exclude-module PyQt6.QtUiTools main.py
+          pip install pyqt6-webengine-qt6
+          pyinstaller --clean --noconfirm --onedir --windowed --name VideoMatrix --noconsole --collect-all PyQt6 --collect-all PyQt6.QtWebEngine --collect-all PyQt6.QtWebEngineCore --collect-all PyQt6.QtWebEngineWidgets --collect-all PyQt6.QtWebEngineQuick --exclude-module PyQt6.Qt3D --exclude-module PyQt6.QtMultimedia --exclude-module PyQt6.QtBluetooth --exclude-module PyQt6.QtNfc --exclude-module PyQt6.QtPositioning --exclude-module PyQt6.QtQuick --exclude-module PyQt6.QtQml --exclude-module PyQt6.QtRemoteObjects --exclude-module PyQt6.QtSensors --exclude-module PyQt6.QtSerialPort --exclude-module PyQt6.QtSvg --exclude-module PyQt6.QtTest --exclude-module PyQt6.QtHelp --exclude-module PyQt6.QtDesigner --exclude-module PyQt6.QtShaderTools --exclude-module PyQt6.QtSpatialAudio --exclude-module PyQt6.QtHttpServer --exclude-module PyQt6.QtPdf --exclude-module PyQt6.QtStateMachine --exclude-module PyQt6.QtUiTools main.py
         shell: cmd
         working-directory: client
       - name: Zip dist
