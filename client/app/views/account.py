@@ -323,12 +323,16 @@ class _AddAccountDialog(QDialog):
             dlg = WebViewLoginDialog(platform, nickname, self)
             dlg.login_success.connect(self._on_login_success)
             dlg.exec()
-        except ImportError:
+        except ImportError as e:
+            from ..api import _debug_log
+            _debug_log(f"[WebView] ImportError: {e}")
             # 弹出安装对话框
             install_dlg = _InstallWebEngineDialog(self)
             if install_dlg.exec() == QDialog.DialogCode.Accepted:
                 Toast.info(self, "安装完成，请重启应用后再次扫码登录")
         except Exception as e:
+            from ..api import _debug_log
+            _debug_log(f"[WebView] Exception: {type(e).__name__}: {e}")
             err_msg = str(e)
             if 'QtWebEngineWidgets' in err_msg or 'ShareOpenGLContexts' in err_msg:
                 install_dlg = _InstallWebEngineDialog(self)
