@@ -547,6 +547,37 @@ function httpPost(string $url, array $headers, string $cookie, string $body, int
 // 抖音爬虫 - 使用已登录账号Cookie
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * 获取抖音ttwid（公开API必需Cookie）
+ */
+function getDouyinTtwid(): string
+{
+    $ch = curl_init('https://www.douyin.com/');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_NOBODY         => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ]);
+    curl_exec($ch);
+    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    curl_close($ch);
+
+    $ttwid = '';
+    foreach ($cookies as $c) {
+        // Netscape cookie format: domain flag path secure expiry name value
+        $parts = explode("\t", $c);
+        if (count($parts) >= 7 && $parts[5] === 'ttwid') {
+            $ttwid = $parts[6];
+            break;
+        }
+    }
+    scraperLog('[抖音] 获取ttwid: ' . ($ttwid ? '成功(' . strlen($ttwid) . ')' : '失败'));
+    return $ttwid;
+}
+
 function crawlDouyin(string $secUid, string $accountUrl): ?array
 {
     if (empty($secUid) && !empty($accountUrl)) {
@@ -557,17 +588,14 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
         return null;
     }
 
-    $cookie = getStoredCookie('douyin');
-    scraperLog('[抖音] secUid=' . $secUid . ' cookie_len=' . strlen($cookie));
-    if (empty($cookie)) {
-        scraperLog('[抖音] 无可用Cookie，请先在「账号管理」中登录至少一个抖音账号');
-        return null;
-    }
+    // 使用抖音公开Web API（可以查看任意用户视频）
+    // 先获取ttwid
+    $ttwid = getDouyinTtwid();
+    $cookie = 'ttwid=' . $ttwid;
 
     $headers = [
         'Accept: application/json, text/plain, */*',
-        'Referer: https://creator.douyin.com/',
-        'Origin: https://creator.douyin.com',
+        'Referer: https://www.douyin.com/user/' . $secUid,
     ];
 
     $videos = [];
@@ -575,42 +603,68 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
     $maxPages = 10;
 
     for ($page = 0; $page < $maxPages; $page++) {
-        $url = "https://creator.douyin.com/web/api/media/aweme/post/?sec_user_id={$secUid}&count=20&max_cursor={$cursor}";
+        $url = "https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id={$secUid}&count=20&max_cursor={$cursor}&aid=6383&cookie_enabled=true&platform=PC&downlink=10";
         $resp = httpFetch($url, $headers, $cookie);
-        scraperLog('[抖音] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 300) : 'NULL'));
+        scraperLog('[抖音] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 500) : 'NULL'));
         if (!$resp) { if ($page === 0) return null; break; }
 
         $data = json_decode($resp, true);
         if (!$data) { scraperLog('[抖音] JSON解析失败'); if ($page === 0) return null; break; }
 
-        $list = $data['aweme_list'] ?? $data['data']['aweme_list'] ?? [];
-        if (empty($list)) { scraperLog('[抖音] 视频列表为空'); break; }
+        $list = $data['aweme_list'] ?? [];
+        if (empty($list)) { scraperLog('[抖音] 视频列表为空，status_code=' . ($data['status_code'] ?? 'null')); break; }
 
         foreach ($list as $item) {
-            $stats = $item['statistics'] ?? $item['stats'] ?? [];
+            $stats = $item['statistics'] ?? [];
             $videos[] = [
-                'title'        => $item['desc'] ?? $item['title'] ?? '',
-                'plays'        => (int)($stats['play_count'] ?? $stats['playCount'] ?? 0),
-                'likes'        => (int)($stats['digg_count'] ?? $stats['likeCount'] ?? 0),
-                'comments'     => (int)($stats['comment_count'] ?? $stats['commentCount'] ?? 0),
-                'shares'       => (int)($stats['share_count'] ?? $stats['shareCount'] ?? 0),
+                'title'        => $item['desc'] ?? '',
+                'plays'        => (int)($stats['play_count'] ?? 0),
+                'likes'        => (int)($stats['digg_count'] ?? 0),
+                'comments'     => (int)($stats['comment_count'] ?? 0),
+                'shares'       => (int)($stats['share_count'] ?? 0),
                 'publish_time' => isset($item['create_time']) ? date('Y-m-d H:i:s', $item['create_time']) : date('Y-m-d H:i:s'),
             ];
         }
 
-        $hasMore = $data['has_more'] ?? $data['data']['has_more'] ?? false;
+        $hasMore = $data['has_more'] ?? 0;
+        scraperLog('[抖音] page=' . $page . ' found=' . count($list) . ' has_more=' . $hasMore);
         if (!$hasMore) break;
-        $cursor = $data['cursor'] ?? $data['data']['cursor'] ?? ($cursor + 20);
+        $cursor = $data['max_cursor'] ?? 0;
         usleep(500000);
     }
 
-    scraperLog('[抖音] secUid=' . $secUid . ' 获取 ' . count($videos) . ' 条视频');
+    scraperLog('[抖音] secUid=' . $secUid . ' 共获取 ' . count($videos) . ' 条视频');
     return empty($videos) ? null : $videos;
 }
 
 // ══════════════════════════════════════════════════════════════
 // 快手爬虫 - 使用已登录账号Cookie + GraphQL
 // ══════════════════════════════════════════════════════════════
+
+/**
+ * 获取快手Cookie（公开主页必需）
+ */
+function getKuaishouCookie(): string
+{
+    $ch = curl_init('https://www.kuaishou.com/');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_NOBODY         => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ]);
+    curl_exec($ch);
+    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    curl_close($ch);
+    $cookieStr = '';
+    foreach ($cookies as $c) {
+        $parts = explode("\t", $c);
+        if (count($parts) >= 7) $cookieStr .= $parts[5] . '=' . $parts[6] . '; ';
+    }
+    return rtrim($cookieStr, '; ');
+}
 
 function crawlKuaishou(string $secUid, string $accountUrl): ?array
 {
@@ -622,16 +676,13 @@ function crawlKuaishou(string $secUid, string $accountUrl): ?array
         return null;
     }
 
-    $cookie = getStoredCookie('kuaishou');
-    if (empty($cookie)) {
-        scraperLog('[快手] 无可用Cookie，请先在「账号管理」中登录至少一个快手账号');
-        return null;
-    }
+    // 使用公开主页API
+    $cookie = getKuaishouCookie();
+    scraperLog('[快手] userId=' . $secUid . ' cookie_len=' . strlen($cookie));
 
     $headers = [
         'Accept: application/json, text/plain, */*',
-        'Referer: https://cp.kuaishou.com/',
-        'Origin: https://cp.kuaishou.com',
+        'Referer: https://www.kuaishou.com/profile/' . $secUid,
         'Content-Type: application/json',
     ];
 
@@ -646,7 +697,8 @@ function crawlKuaishou(string $secUid, string $accountUrl): ?array
             'query'        => 'query visionProfilePhotoList($userId: String, $pcursor: String, $page: String) { visionProfilePhotoList(userId: $userId, pcursor: $pcursor, page: $page) { list { id duration coverUrl viewCount likeCount commentCount shareCount caption timestamp } pcursor } }',
         ]);
 
-        $resp = httpPost('https://cp.kuaishou.com/graphql', $headers, $cookie, $body);
+        $resp = httpPost('https://www.kuaishou.com/graphql', $headers, $cookie, $body);
+        scraperLog('[快手] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 300) : 'NULL'));
         if (!$resp) { if ($page === 0) return null; break; }
 
         $data = json_decode($resp, true);
@@ -658,10 +710,10 @@ function crawlKuaishou(string $secUid, string $accountUrl): ?array
         foreach ($list as $item) {
             $videos[] = [
                 'title'        => $item['caption'] ?? $item['title'] ?? '',
-                'plays'        => (int)($item['viewCount'] ?? $item['play_count'] ?? 0),
-                'likes'        => (int)($item['likeCount'] ?? $item['like_count'] ?? 0),
-                'comments'     => (int)($item['commentCount'] ?? $item['comment_count'] ?? 0),
-                'shares'       => (int)($item['shareCount'] ?? $item['share_count'] ?? 0),
+                'plays'        => (int)($item['viewCount'] ?? 0),
+                'likes'        => (int)($item['likeCount'] ?? 0),
+                'comments'     => (int)($item['commentCount'] ?? 0),
+                'shares'       => (int)($item['shareCount'] ?? 0),
                 'publish_time' => isset($item['timestamp']) ? date('Y-m-d H:i:s', (int)($item['timestamp'] / 1000)) : date('Y-m-d H:i:s'),
             ];
         }
@@ -671,13 +723,38 @@ function crawlKuaishou(string $secUid, string $accountUrl): ?array
         usleep(500000);
     }
 
-    scraperLog("[快手] userId={$secUid} 获取 " . count($videos) . " 条视频");
+    scraperLog('[快手] userId=' . $secUid . ' 共获取 ' . count($videos) . ' 条视频');
     return empty($videos) ? null : $videos;
 }
 
 // ══════════════════════════════════════════════════════════════
 // 小红书爬虫 - 使用已登录账号Cookie
 // ══════════════════════════════════════════════════════════════
+
+/**
+ * 获取小红书Cookie
+ */
+function getXhsCookie(): string
+{
+    $ch = curl_init('https://www.xiaohongshu.com/');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_NOBODY         => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ]);
+    curl_exec($ch);
+    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    curl_close($ch);
+    $cookieStr = '';
+    foreach ($cookies as $c) {
+        $parts = explode("\t", $c);
+        if (count($parts) >= 7) $cookieStr .= $parts[5] . '=' . $parts[6] . '; ';
+    }
+    return rtrim($cookieStr, '; ');
+}
 
 function crawlXhs(string $secUid, string $accountUrl): ?array
 {
@@ -689,16 +766,13 @@ function crawlXhs(string $secUid, string $accountUrl): ?array
         return null;
     }
 
-    $cookie = getStoredCookie('xiaohongshu');
-    if (empty($cookie)) {
-        scraperLog('[小红书] 无可用Cookie，请先在「账号管理」中登录至少一个小红书账号');
-        return null;
-    }
+    // 使用公开API
+    $cookie = getXhsCookie();
+    scraperLog('[小红书] userId=' . $secUid . ' cookie_len=' . strlen($cookie));
 
     $headers = [
         'Accept: application/json, text/plain, */*',
-        'Referer: https://creator.xiaohongshu.com/',
-        'Origin: https://creator.xiaohongshu.com',
+        'Referer: https://www.xiaohongshu.com/user/profile/' . $secUid,
     ];
 
     $videos = [];
@@ -706,8 +780,9 @@ function crawlXhs(string $secUid, string $accountUrl): ?array
     $maxPages = 10;
 
     for ($page = 0; $page < $maxPages; $page++) {
-        $url = "https://creator.xiaohongshu.com/api/galaxy/creator/note/user/posted?num=20&cursor=" . urlencode($cursor) . "&image_formats=jpg,webp,avif&user_id=" . urlencode($secUid);
+        $url = "https://edith.xiaohongshu.com/api/sns/web/v1/user_posted?num=20&cursor=" . urlencode($cursor) . "&user_id=" . urlencode($secUid) . "&image_formats=jpg,webp,avif";
         $resp = httpFetch($url, $headers, $cookie);
+        scraperLog('[小红书] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 300) : 'NULL'));
         if (!$resp) { if ($page === 0) return null; break; }
 
         $data = json_decode($resp, true);
@@ -734,7 +809,7 @@ function crawlXhs(string $secUid, string $accountUrl): ?array
         usleep(500000);
     }
 
-    scraperLog("[小红书] userId={$secUid} 获取 " . count($videos) . " 条笔记");
+    scraperLog('[小红书] userId=' . $secUid . ' 共获取 ' . count($videos) . ' 条笔记');
     return empty($videos) ? null : $videos;
 }
 
