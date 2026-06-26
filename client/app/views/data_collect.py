@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
     QMessageBox, QProgressBar, QSplitter, QTabWidget, QTextEdit
 )
 from PyQt6.QtGui import QColor
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY,
@@ -59,11 +61,11 @@ def _save_json(path: Path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-# ── 采集工作线程 ──────────────────────────────────────────
+# ── 采集工作线程（仅用于非浏览器平台） ──────────────────
 class CollectWorker(QThread):
-    progress = pyqtSignal(str, int, int)   # account_name, page, count
-    finished = pyqtSignal(list)             # results list
-    account_done = pyqtSignal(str, str, int)  # account_name, error_or_ok, video_count
+    progress = pyqtSignal(str, int, int)
+    finished = pyqtSignal(list)
+    account_done = pyqtSignal(str, str, int)
 
     def __init__(self, accounts: list):
         super().__init__()
@@ -76,181 +78,35 @@ class CollectWorker(QThread):
 
     def run(self):
         import requests as req
-
         for acc in self._accounts:
             if self._cancelled:
                 break
-
             name = acc["account_name"]
             platform = acc["platform"]
             sec_uid = acc["sec_uid"]
-
             try:
                 self.progress.emit(name, 0, 0)
                 videos = self._scrape_http(platform, sec_uid, name)
                 self._results.append({
-                    "account_name": name,
-                    "platform": platform,
-                    "videos": videos,
-                    "error": None,
+                    "account_name": name, "platform": platform,
+                    "videos": videos, "error": None,
                     "collected_at": datetime.now().isoformat()
                 })
                 self.account_done.emit(name, "ok", len(videos))
             except Exception as e:
                 self._results.append({
-                    "account_name": name,
-                    "platform": platform,
-                    "videos": [],
-                    "error": str(e),
+                    "account_name": name, "platform": platform,
+                    "videos": [], "error": str(e),
                     "collected_at": datetime.now().isoformat()
                 })
                 self.account_done.emit(name, str(e), 0)
-
         self.finished.emit(self._results)
 
-    def _scrape_http(self, platform: str, sec_uid: str, name: str) -> list:
-        """HTTP方式采集 - 直接请求平台公开页面提取数据"""
-        import requests as req
-        import re
-
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        }
-
-        if platform == 'douyin':
-            return self._scrape_douyin(sec_uid, headers)
-        elif platform == 'kuaishou':
-            return self._scrape_kuaishou(sec_uid, headers)
-        elif platform == 'xiaohongshu':
-            return self._scrape_xhs(sec_uid, headers)
-        return []
-
-    def _scrape_douyin(self, sec_uid: str, headers: dict) -> list:
-        """抖音: 请求用户主页，从RENDER_DATA提取"""
-        import requests as req
-        import re, json
-
-        url = f'https://www.douyin.com/user/{sec_uid}'
-        resp = req.get(url, headers=headers, timeout=15)
-        videos = []
-
-        # 从RENDER_DATA提取
-        m = re.search(r'<script id="RENDER_DATA"[^>]*>([^<]+)</script>', resp.text)
-        if m:
-            try:
-                data = json.loads(m.group(1))
-                aweme_list = self._find_key(data, 'aweme_list')
-                if aweme_list:
-                    for item in aweme_list:
-                        stats = item.get('statistics', {})
-                        videos.append({
-                            'title': item.get('desc', ''),
-                            'plays': stats.get('play_count', 0),
-                            'likes': stats.get('digg_count', 0),
-                            'comments': stats.get('comment_count', 0),
-                            'shares': stats.get('share_count', 0),
-                            'publish_time': ''
-                        })
-            except Exception:
-                pass
-
-        # 备用: 从 _ROUTER_DATA 提取
-        if not videos:
-            for script_id in ['__ROUTER_DATA', '_ROUTER_DATA']:
-                m = re.search(rf'<script id="{script_id}"[^>]*>([^<]+)</script>', resp.text)
-                if m:
-                    try:
-                        data = json.loads(m.group(1))
-                        aweme_list = self._find_key(data, 'aweme_list')
-                        if aweme_list:
-                            for item in aweme_list:
-                                stats = item.get('statistics', {})
-                                videos.append({
-                                    'title': item.get('desc', ''),
-                                    'plays': stats.get('play_count', 0),
-                                    'likes': stats.get('digg_count', 0),
-                                    'comments': stats.get('comment_count', 0),
-                                    'shares': stats.get('share_count', 0),
-                                    'publish_time': ''
-                                })
-                    except Exception:
-                        pass
-                if videos:
-                    break
-
-        return videos
-
-    def _scrape_kuaishou(self, sec_uid: str, headers: dict) -> list:
-        """快手: 通过GraphQL API获取"""
-        import requests as req
-        import json
-
-        # 先获取cookie
-        session = req.Session()
-        session.headers.update(headers)
-        try:
-            session.get('https://www.kuaishou.com/', timeout=10)
-        except Exception:
-            pass
-
-        body = {
-            'operationName': 'visionProfilePhotoList',
-            'variables': {'userId': sec_uid, 'pcursor': '', 'page': 'profile'},
-            'query': 'query visionProfilePhotoList($userId: String, $pcursor: String, $page: String) { visionProfilePhotoList(userId: $userId, pcursor: $pcursor, page: $page) { list { id viewCount likeCount commentCount shareCount caption timestamp } pcursor } }'
-        }
-
-        videos = []
-        try:
-            resp = session.post('https://www.kuaishou.com/graphql', json=body, timeout=15)
-            data = resp.json()
-            items = data.get('data', {}).get('visionProfilePhotoList', {}).get('list', [])
-            for item in items:
-                videos.append({
-                    'title': item.get('caption', ''),
-                    'plays': item.get('viewCount', 0),
-                    'likes': item.get('likeCount', 0),
-                    'comments': item.get('commentCount', 0),
-                    'shares': item.get('shareCount', 0),
-                    'publish_time': ''
-                })
-        except Exception:
-            pass
-        return videos
-
-    def _scrape_xhs(self, sec_uid: str, headers: dict) -> list:
-        """小红书: 请求用户主页提取"""
-        import requests as req
-        import re, json
-
-        url = f'https://www.xiaohongshu.com/user/profile/{sec_uid}'
-        resp = req.get(url, headers=headers, timeout=15)
-        videos = []
-
-        # 从SSR数据提取
-        m = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.+?})\s*</script>', resp.text)
-        if m:
-            try:
-                data = json.loads(m.group(1))
-                notes = self._find_key(data, 'notes')
-                if notes:
-                    for note in (notes if isinstance(notes, list) else []):
-                        interact = note.get('interactInfo', note.get('interact_info', {}))
-                        videos.append({
-                            'title': note.get('title', note.get('displayTitle', '')),
-                            'plays': interact.get('viewCount', interact.get('view_count', 0)),
-                            'likes': interact.get('likedCount', interact.get('liked_count', 0)),
-                            'comments': interact.get('commentCount', interact.get('comment_count', 0)),
-                            'shares': interact.get('shareCount', interact.get('share_count', 0)),
-                            'publish_time': ''
-                        })
-            except Exception:
-                pass
-        return videos
+    def _scrape_http(self, platform, sec_uid, name):
+        return []  # HTTP方式已弃用，改用浏览器
 
     @staticmethod
     def _find_key(obj, target_key):
-        """递归查找嵌套字典中的指定key"""
         if isinstance(obj, dict):
             if target_key in obj:
                 return obj[target_key]
@@ -264,6 +120,170 @@ class CollectWorker(QThread):
                 if r is not None:
                     return r
         return None
+
+
+# ── 浏览器采集器（主线程） ──────────────────────────────
+class BrowserScraper(QObject):
+    """在主线程用 QWebEngineView 加载页面并提取数据"""
+    account_done = pyqtSignal(str, str, int)  # name, error_or_ok, video_count
+    all_done = pyqtSignal(list)                # all results
+    log_msg = pyqtSignal(str)
+
+    EXTRACT_JS = """
+    (function() {
+        var videos = [];
+        // 方案1: RENDER_DATA
+        var scripts = ['RENDER_DATA', '__ROUTER_DATA', '_ROUTER_DATA'];
+        for (var i = 0; i < scripts.length; i++) {
+            var el = document.getElementById(scripts[i]);
+            if (el) {
+                try {
+                    var data = JSON.parse(decodeURIComponent(el.textContent));
+                    function findKey(obj, key) {
+                        if (!obj) return null;
+                        if (obj[key]) return obj[key];
+                        for (var k in obj) {
+                            if (typeof obj[k] === 'object') {
+                                var r = findKey(obj[k], key);
+                                if (r) return r;
+                            }
+                        }
+                        return null;
+                    }
+                    var list = findKey(data, 'aweme_list');
+                    if (list && list.length > 0) {
+                        for (var j = 0; j < list.length; j++) {
+                            var item = list[j];
+                            var stats = item.statistics || {};
+                            videos.push({
+                                title: item.desc || '',
+                                plays: stats.play_count || 0,
+                                likes: stats.digg_count || 0,
+                                comments: stats.comment_count || 0,
+                                shares: stats.share_count || 0,
+                                publish_time: item.create_time ? new Date(item.create_time * 1000).toISOString().split('T')[0] : ''
+                            });
+                        }
+                        return JSON.stringify({source: scripts[i], videos: videos});
+                    }
+                } catch(e) {}
+            }
+        }
+        // 方案2: DOM提取
+        var items = document.querySelectorAll('[class*="videoCard"], [class*="video-card"], .ECMy_Zdt, [class*="DyVideoCover"]');
+        for (var i = 0; i < items.length; i++) {
+            var el = items[i];
+            var titleEl = el.querySelector('[class*="title"], a[title], [class*="desc"]');
+            var title = titleEl ? (titleEl.getAttribute('title') || titleEl.textContent.trim()) : '';
+            if (title && title.length > 2) videos.push({title: title, plays: 0, likes: 0, comments: 0, shares: 0, publish_time: ''});
+        }
+        return JSON.stringify({source: 'DOM', videos: videos});
+    })()
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._accounts = []
+        self._results = []
+        self._idx = 0
+        self._browser = None
+        self._retry = 0
+
+    def start(self, accounts: list):
+        self._accounts = accounts
+        self._results = []
+        self._idx = 0
+        self._start_next()
+
+    def _start_next(self):
+        if self._idx >= len(self._accounts):
+            self.all_done.emit(self._results)
+            return
+
+        acc = self._accounts[self._idx]
+        name = acc['account_name']
+        platform = acc['platform']
+        sec_uid = acc['sec_uid']
+        self._retry = 0
+
+        url_map = {
+            'douyin': f'https://www.douyin.com/user/{sec_uid}',
+            'kuaishou': f'https://www.kuaishou.com/profile/{sec_uid}',
+            'xiaohongshu': f'https://www.xiaohongshu.com/user/profile/{sec_uid}',
+        }
+        url = url_map.get(platform, '')
+        if not url:
+            self.account_done.emit(name, f'不支持的平台: {platform}', 0)
+            self._results.append({'account_name': name, 'platform': platform, 'videos': [], 'error': f'不支持: {platform}'});
+            self._idx += 1
+            QTimer.singleShot(500, self._start_next)
+            return
+
+        self.log_msg.emit(f'正在采集 {name} ({platform})...')
+
+        # 创建浏览器实例
+        if self._browser:
+            self._browser.deleteLater()
+        profile = QWebEngineProfile(f'scraper_{name}', self.parent())
+        page = QWebEnginePage(profile, self.parent())
+        self._browser = QWebEngineView(self.parent())
+        self._browser.setPage(page)
+        self._browser.setFixedSize(1280, 800)
+        self._browser.move(-2000, -2000)
+        self._browser.loadFinished.connect(self._on_loaded)
+        self._browser.show()
+        self._browser.load(QUrl(url))
+
+    def _on_loaded(self, ok):
+        acc = self._accounts[self._idx]
+        name = acc['account_name']
+
+        if not ok:
+            self.log_msg.emit(f'❌ {name}: 页面加载失败')
+            self.account_done.emit(name, '页面加载失败', 0)
+            self._results.append({'account_name': name, 'platform': acc['platform'], 'videos': [], 'error': '页面加载失败'})
+            self._idx += 1
+            QTimer.singleShot(500, self._start_next)
+            return
+
+        self.log_msg.emit(f'  页面已加载，等待渲染...')
+        QTimer.singleShot(4000, self._extract)
+
+    def _extract(self):
+        acc = self._accounts[self._idx]
+        name = acc['account_name']
+        self._browser.page().runJavaScript(self.EXTRACT_JS, self._on_result)
+
+    def _on_result(self, result):
+        acc = self._accounts[self._idx]
+        name = acc['account_name']
+
+        videos = []
+        source = 'none'
+        if result:
+            try:
+                data = json.loads(result)
+                source = data.get('source', '?')
+                videos = data.get('videos', [])
+            except Exception:
+                pass
+
+        if not videos and self._retry < 2:
+            self._retry += 1
+            self.log_msg.emit(f'  第{self._retry}次未提取到，滚动后重试...')
+            self._browser.page().runJavaScript('window.scrollTo(0, document.body.scrollHeight);')
+            QTimer.singleShot(3000, self._extract)
+            return
+
+        self.log_msg.emit(f'  提取方式: {source}, 视频数: {len(videos)}')
+        self.account_done.emit(name, 'ok' if videos else '未提取到数据', len(videos))
+        self._results.append({
+            'account_name': name, 'platform': acc['platform'],
+            'videos': videos, 'error': None if videos else '未提取到数据',
+            'collected_at': datetime.now().isoformat()
+        })
+        self._idx += 1
+        QTimer.singleShot(1000, self._start_next)
 
 
 # ── 添加账号对话框 ──────────────────────────────────────────
@@ -368,6 +388,7 @@ class DataCollectView(QWidget):
         self._accounts: list[dict] = _load_json(ACCOUNTS_FILE)
         self._results: list[dict] = _load_json(RESULTS_FILE)
         self._worker: CollectWorker | None = None
+        self._scraper: BrowserScraper | None = None
         self._init_ui()
         self._refresh_table()
 
@@ -634,27 +655,42 @@ class DataCollectView(QWidget):
             Toast.success(self, "已删除")
 
     def _on_collect(self):
-        """开始采集"""
+        """开始采集 - 使用嵌入浏览器（主线程）"""
         if not self._accounts:
             Toast.warning(self, "请先添加监控账号")
             return
 
-        if self._worker and self._worker.isRunning():
-            Toast.warning(self, "正在采集中，请等待完成")
-            return
-
         self._log_text.clear()
         self._log("开始采集...")
-        self._progress_bar.setRange(0, 0)  # indeterminate
+        self._progress_bar.setRange(0, 0)
         self._progress_bar.show()
         self._collect_btn.setEnabled(False)
         self._status_label.setText("正在采集数据...")
 
-        self._worker = CollectWorker(self._accounts)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.account_done.connect(self._on_account_done)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.start()
+        self._scraper = BrowserScraper(self)
+        self._scraper.log_msg.connect(self._log)
+        self._scraper.account_done.connect(self._on_account_done)
+        self._scraper.all_done.connect(self._on_browser_done)
+        self._scraper.start(self._accounts)
+
+    def _on_browser_done(self, results: list):
+        self._collect_btn.setEnabled(True)
+        self._progress_bar.hide()
+        self._status_label.setText(f"采集完成，共 {len(results)} 个账号")
+
+        old_map = {r["account_name"]: r for r in self._results}
+        for r in results:
+            if r.get("videos"):
+                old_map[r["account_name"]] = r
+            elif r.get("error") and r["account_name"] in old_map:
+                pass
+        self._results = list(old_map.values())
+        _save_json(RESULTS_FILE, self._results)
+
+        self._refresh_table()
+        total_videos = sum(len(r.get("videos", [])) for r in self._results)
+        self._log(f"\n🎉 全部采集完成! 共 {total_videos} 条视频数据")
+        Toast.success(self, f"采集完成，共 {total_videos} 条视频")
 
     def _on_progress(self, name: str, page: int, count: int):
         self._status_label.setText(f"正在采集 {name} (第{page}页, 已找到{count}条)...")
@@ -748,3 +784,5 @@ class DataCollectView(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
             self._worker.wait(3000)
+        if self._scraper:
+            self._scraper.deleteLater()
