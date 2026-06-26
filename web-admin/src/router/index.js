@@ -11,7 +11,8 @@ const routes = [
     component: () => import('../views/Layout.vue'),
     redirect: '/statistics',
     children: [
-      { path: 'statistics', name: 'Statistics', component: () => import('../views/Statistics.vue'), meta: { title: '数据统计' } },
+      { path: 'statistics', name: 'Statistics', component: () => import('../views/Statistics.vue'), meta: { title: '数据总览' } },
+      { path: 'data-stats', name: 'DataStats', component: () => import('../views/DataStats.vue'), meta: { title: '数据统计' } },
       { path: 'users', name: 'UserManage', component: () => import('../views/UserManage.vue'), meta: { title: '用户管理' } },
       { path: 'ai-config', name: 'AiConfig', component: () => import('../views/AiConfig.vue'), meta: { title: 'AI配音配置' } },
       { path: 'platform-config', name: 'PlatformConfig', component: () => import('../views/PlatformConfig.vue'), meta: { title: '平台接口配置' } },

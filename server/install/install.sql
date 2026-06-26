@@ -131,6 +131,23 @@ CREATE TABLE IF NOT EXISTS `{prefix}publish_rule` (
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `{prefix}monitored_account` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `platform` ENUM('douyin','kuaishou','xiaohongshu','weixin') NOT NULL,
+  `account_name` VARCHAR(100) NOT NULL,
+  `account_url` VARCHAR(500) DEFAULT '',
+  `sec_uid` VARCHAR(200) DEFAULT '',
+  `total_videos` INT DEFAULT 0,
+  `total_plays` BIGINT DEFAULT 0,
+  `total_likes` BIGINT DEFAULT 0,
+  `total_comments` BIGINT DEFAULT 0,
+  `total_shares` BIGINT DEFAULT 0,
+  `last_sync` DATETIME,
+  `status` ENUM('active','error') DEFAULT 'active',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_platform` (`platform`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 初始数据
 
 INSERT IGNORE INTO `{prefix}ai_voice` (`name`, `voice_id`, `type`, `scene`) VALUES

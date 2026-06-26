@@ -90,7 +90,8 @@ const userStore = useUserStore()
 const showToast = inject('showToast')
 
 const menuItems = [
-  { path: '/statistics', label: '数据统计', icon: 'fas fa-chart-bar' },
+  { path: '/statistics', label: '数据总览', icon: 'fas fa-chart-bar' },
+  { path: '/data-stats', label: '数据统计', icon: 'fas fa-chart-line' },
   { path: '/users', label: '用户管理', icon: 'fas fa-users' },
   { path: '/ai-config', label: 'AI配音配置', icon: 'fas fa-microphone' },
   { path: '/platform-config', label: '平台接口配置', icon: 'fas fa-cogs' },
