@@ -513,8 +513,9 @@ function httpFetch(string $url, array $headers = [], string $cookie = '', int $t
     $resp = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
+    $curlErr = curl_errno($ch);
     curl_close($ch);
-    scraperLog("GET {$url} => HTTP {$code} " . ($err ? "curl_err: {$err}" : 'resp_len=' . strlen($resp ?: '')));
+    scraperLog("GET {$url} => HTTP {$code} curl={$curlErr} " . ($err ? "err: {$err}" : 'len=' . strlen($resp ?: '')));
     if ($resp === false || $code >= 400) return null;
     return $resp;
 }
@@ -555,26 +556,27 @@ function getDouyinTtwid(): string
     $ch = curl_init('https://www.douyin.com/');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_NOBODY         => true,
+        CURLOPT_HEADER         => true,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     ]);
-    curl_exec($ch);
-    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    $resp = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     $ttwid = '';
-    foreach ($cookies as $c) {
-        // Netscape cookie format: domain flag path secure expiry name value
-        $parts = explode("\t", $c);
-        if (count($parts) >= 7 && $parts[5] === 'ttwid') {
-            $ttwid = $parts[6];
-            break;
+    if ($resp && preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $resp, $matches)) {
+        foreach ($matches[1] as $c) {
+            if (strpos($c, 'ttwid=') === 0) {
+                $ttwid = substr($c, 6);
+                break;
+            }
         }
     }
-    scraperLog('[抖音] 获取ttwid: ' . ($ttwid ? '成功(' . strlen($ttwid) . ')' : '失败'));
+    scraperLog('[抖音] 获取ttwid: ' . ($ttwid ? '成功' : '失败') . ' http=' . $code . ' err=' . $err . ' resp_len=' . strlen($resp ?: ''));
     return $ttwid;
 }
 
@@ -642,26 +644,24 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
 // ══════════════════════════════════════════════════════════════
 
 /**
- * 获取快手Cookie（公开主页必需）
+ * 获取快手Cookie
  */
 function getKuaishouCookie(): string
 {
     $ch = curl_init('https://www.kuaishou.com/');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_NOBODY         => true,
+        CURLOPT_HEADER         => true,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     ]);
-    curl_exec($ch);
-    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    $resp = curl_exec($ch);
     curl_close($ch);
     $cookieStr = '';
-    foreach ($cookies as $c) {
-        $parts = explode("\t", $c);
-        if (count($parts) >= 7) $cookieStr .= $parts[5] . '=' . $parts[6] . '; ';
+    if ($resp && preg_match_all('/^Set-Cookie:\s*([^;\r\n]*)/mi', $resp, $matches)) {
+        foreach ($matches[1] as $c) $cookieStr .= $c . '; ';
     }
     return rtrim($cookieStr, '; ');
 }
@@ -739,19 +739,17 @@ function getXhsCookie(): string
     $ch = curl_init('https://www.xiaohongshu.com/');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_NOBODY         => true,
+        CURLOPT_HEADER         => true,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     ]);
-    curl_exec($ch);
-    $cookies = curl_getinfo($ch, CURLINFO_COOKIELIST);
+    $resp = curl_exec($ch);
     curl_close($ch);
     $cookieStr = '';
-    foreach ($cookies as $c) {
-        $parts = explode("\t", $c);
-        if (count($parts) >= 7) $cookieStr .= $parts[5] . '=' . $parts[6] . '; ';
+    if ($resp && preg_match_all('/^Set-Cookie:\s*([^;\r\n]*)/mi', $resp, $matches)) {
+        foreach ($matches[1] as $c) $cookieStr .= $c . '; ';
     }
     return rtrim($cookieStr, '; ');
 }
