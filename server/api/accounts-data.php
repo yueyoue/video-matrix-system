@@ -40,6 +40,9 @@ switch ($action) {
     case 'export':
         exportExcel();
         break;
+    case 'ping':
+        success(['ok' => true, 'user' => $currentUser, 'method' => $method, 'action' => $action, 'segments' => $segments]);
+        break;
     case '':
         if ($method === 'GET') getList();
         elseif ($method === 'POST') create();
@@ -185,9 +188,10 @@ function remove($id)
 function syncAll()
 {
     global $pdo, $currentUser;
-    ensureMonitoredTable();
-    $input     = getJsonInput();
-    $accountId = isset($input['account_id']) ? (int)$input['account_id'] : 0;
+    try {
+        ensureMonitoredTable();
+        $input     = getJsonInput();
+        $accountId = isset($input['account_id']) ? (int)$input['account_id'] : 0;
 
     if ($accountId > 0) {
         $st = $pdo->prepare("SELECT * FROM " . table('monitored_account') . " WHERE id = ?");
@@ -279,6 +283,9 @@ function syncAll()
     logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '数据统计', '同步数据', "同步了 " . count($results) . " 个账号, 新增 {$totalNew} 条");
 
     success(['results' => $results, 'total_new' => $totalNew], "同步完成，新增 {$totalNew} 条视频数据");
+    } catch (Throwable $e) {
+        error('同步异常: ' . $e->getMessage(), 500);
+    }
 }
 
 // ───────────────────────── 视频数据查询 ─────────────────────────
