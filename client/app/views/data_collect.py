@@ -75,8 +75,7 @@ class CollectWorker(QThread):
         self._cancelled = True
 
     def run(self):
-        from ..scraper import ProfileScraper
-        from PyQt6.QtWidgets import QApplication
+        import requests as req
 
         for acc in self._accounts:
             if self._cancelled:
@@ -88,11 +87,7 @@ class CollectWorker(QThread):
 
             try:
                 self.progress.emit(name, 0, 0)
-
-                # 使用 requests + 简单HTTP方式采集
-                # (QWebEngineView 不能在子线程中使用，改用HTTP)
                 videos = self._scrape_http(platform, sec_uid, name)
-
                 self._results.append({
                     "account_name": name,
                     "platform": platform,
@@ -101,7 +96,6 @@ class CollectWorker(QThread):
                     "collected_at": datetime.now().isoformat()
                 })
                 self.account_done.emit(name, "ok", len(videos))
-
             except Exception as e:
                 self._results.append({
                     "account_name": name,
@@ -115,16 +109,161 @@ class CollectWorker(QThread):
         self.finished.emit(self._results)
 
     def _scrape_http(self, platform: str, sec_uid: str, name: str) -> list:
-        """HTTP方式采集 - 调用服务端API"""
+        """HTTP方式采集 - 直接请求平台公开页面提取数据"""
+        import requests as req
+        import re
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+
+        if platform == 'douyin':
+            return self._scrape_douyin(sec_uid, headers)
+        elif platform == 'kuaishou':
+            return self._scrape_kuaishou(sec_uid, headers)
+        elif platform == 'xiaohongshu':
+            return self._scrape_xhs(sec_uid, headers)
+        return []
+
+    def _scrape_douyin(self, sec_uid: str, headers: dict) -> list:
+        """抖音: 请求用户主页，从RENDER_DATA提取"""
+        import requests as req
+        import re, json
+
+        url = f'https://www.douyin.com/user/{sec_uid}'
+        resp = req.get(url, headers=headers, timeout=15)
+        videos = []
+
+        # 从RENDER_DATA提取
+        m = re.search(r'<script id="RENDER_DATA"[^>]*>([^<]+)</script>', resp.text)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                aweme_list = self._find_key(data, 'aweme_list')
+                if aweme_list:
+                    for item in aweme_list:
+                        stats = item.get('statistics', {})
+                        videos.append({
+                            'title': item.get('desc', ''),
+                            'plays': stats.get('play_count', 0),
+                            'likes': stats.get('digg_count', 0),
+                            'comments': stats.get('comment_count', 0),
+                            'shares': stats.get('share_count', 0),
+                            'publish_time': ''
+                        })
+            except Exception:
+                pass
+
+        # 备用: 从 _ROUTER_DATA 提取
+        if not videos:
+            for script_id in ['__ROUTER_DATA', '_ROUTER_DATA']:
+                m = re.search(rf'<script id="{script_id}"[^>]*>([^<]+)</script>', resp.text)
+                if m:
+                    try:
+                        data = json.loads(m.group(1))
+                        aweme_list = self._find_key(data, 'aweme_list')
+                        if aweme_list:
+                            for item in aweme_list:
+                                stats = item.get('statistics', {})
+                                videos.append({
+                                    'title': item.get('desc', ''),
+                                    'plays': stats.get('play_count', 0),
+                                    'likes': stats.get('digg_count', 0),
+                                    'comments': stats.get('comment_count', 0),
+                                    'shares': stats.get('share_count', 0),
+                                    'publish_time': ''
+                                })
+                    except Exception:
+                        pass
+                if videos:
+                    break
+
+        return videos
+
+    def _scrape_kuaishou(self, sec_uid: str, headers: dict) -> list:
+        """快手: 通过GraphQL API获取"""
+        import requests as req
+        import json
+
+        # 先获取cookie
+        session = req.Session()
+        session.headers.update(headers)
         try:
-            # 先尝试通过服务端API采集
-            result = api.collect_account_data(platform, sec_uid, name)
-            data = result.get("data", {})
-            return data.get("videos", [])
-        except Exception as e:
-            print(f"[CollectWorker] 服务端采集失败: {e}")
-            # 降级：返回空列表，让用户手动同步
-            return []
+            session.get('https://www.kuaishou.com/', timeout=10)
+        except Exception:
+            pass
+
+        body = {
+            'operationName': 'visionProfilePhotoList',
+            'variables': {'userId': sec_uid, 'pcursor': '', 'page': 'profile'},
+            'query': 'query visionProfilePhotoList($userId: String, $pcursor: String, $page: String) { visionProfilePhotoList(userId: $userId, pcursor: $pcursor, page: $page) { list { id viewCount likeCount commentCount shareCount caption timestamp } pcursor } }'
+        }
+
+        videos = []
+        try:
+            resp = session.post('https://www.kuaishou.com/graphql', json=body, timeout=15)
+            data = resp.json()
+            items = data.get('data', {}).get('visionProfilePhotoList', {}).get('list', [])
+            for item in items:
+                videos.append({
+                    'title': item.get('caption', ''),
+                    'plays': item.get('viewCount', 0),
+                    'likes': item.get('likeCount', 0),
+                    'comments': item.get('commentCount', 0),
+                    'shares': item.get('shareCount', 0),
+                    'publish_time': ''
+                })
+        except Exception:
+            pass
+        return videos
+
+    def _scrape_xhs(self, sec_uid: str, headers: dict) -> list:
+        """小红书: 请求用户主页提取"""
+        import requests as req
+        import re, json
+
+        url = f'https://www.xiaohongshu.com/user/profile/{sec_uid}'
+        resp = req.get(url, headers=headers, timeout=15)
+        videos = []
+
+        # 从SSR数据提取
+        m = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.+?})\s*</script>', resp.text)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                notes = self._find_key(data, 'notes')
+                if notes:
+                    for note in (notes if isinstance(notes, list) else []):
+                        interact = note.get('interactInfo', note.get('interact_info', {}))
+                        videos.append({
+                            'title': note.get('title', note.get('displayTitle', '')),
+                            'plays': interact.get('viewCount', interact.get('view_count', 0)),
+                            'likes': interact.get('likedCount', interact.get('liked_count', 0)),
+                            'comments': interact.get('commentCount', interact.get('comment_count', 0)),
+                            'shares': interact.get('shareCount', interact.get('share_count', 0)),
+                            'publish_time': ''
+                        })
+            except Exception:
+                pass
+        return videos
+
+    @staticmethod
+    def _find_key(obj, target_key):
+        """递归查找嵌套字典中的指定key"""
+        if isinstance(obj, dict):
+            if target_key in obj:
+                return obj[target_key]
+            for v in obj.values():
+                r = CollectWorker._find_key(v, target_key)
+                if r is not None:
+                    return r
+        elif isinstance(obj, list):
+            for item in obj:
+                r = CollectWorker._find_key(item, target_key)
+                if r is not None:
+                    return r
+        return None
 
 
 # ── 添加账号对话框 ──────────────────────────────────────────

@@ -227,7 +227,7 @@ function httpGet(string $url, array $headers, string $cookie, int $timeout = 15)
     curl_close($ch);
 
     // 记录请求日志
-    $logDir = dirname(dirname(__DIR__)) . '/logs';
+    $logDir = dirname(__DIR__) . '/logs';
     if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
     $logFile = $logDir . '/scraper.log';
     $logMsg = date('Y-m-d H:i:s') . " GET {$url} => HTTP {$httpCode} (curl_err={$curlErr})\n";
