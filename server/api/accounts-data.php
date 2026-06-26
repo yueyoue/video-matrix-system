@@ -43,6 +43,9 @@ switch ($action) {
     case 'ping':
         success(['ok' => true, 'user' => $currentUser, 'method' => $method, 'action' => $action, 'segments' => $segments]);
         break;
+    case 'upload':
+        uploadCollected();
+        break;
     case 'log':
         $logFile = dirname(__DIR__) . '/logs/scraper.log';
         $lines = 50;
@@ -388,6 +391,75 @@ function getSummary()
     }
 
     success(['summary' => $summary, 'platforms' => $platforms, 'accounts' => $accounts]);
+}
+
+// ───────────────────────── 桌面端数据上传 ─────────────────────────
+
+function uploadCollected()
+{
+    global $pdo, $currentUser;
+    ensureMonitoredTable();
+
+    $input = getJsonInput();
+    $platform    = $input['platform'] ?? '';
+    $accountName = $input['account_name'] ?? '';
+    $videos      = $input['videos'] ?? [];
+
+    if (empty($platform) || empty($accountName)) error('缺少平台或账号名');
+    if (empty($videos)) error('没有视频数据');
+
+    $newCount = 0;
+    $totalPlays = 0;
+    $totalLikes = 0;
+    $totalComments = 0;
+    $totalShares = 0;
+
+    foreach ($videos as $v) {
+        $title = $v['title'] ?? '';
+        if (empty($title)) continue;
+
+        $plays    = (int)($v['plays'] ?? 0);
+        $likes    = (int)($v['likes'] ?? 0);
+        $comments = (int)($v['comments'] ?? 0);
+        $shares   = (int)($v['shares'] ?? 0);
+        $pubTime  = $v['publish_time'] ?? date('Y-m-d H:i:s');
+
+        $totalPlays    += $plays;
+        $totalLikes    += $likes;
+        $totalComments += $comments;
+        $totalShares   += $shares;
+
+        // 去重
+        $chk = $pdo->prepare("SELECT id FROM " . table('video_data') . " WHERE platform = ? AND account_name = ? AND video_title = ? LIMIT 1");
+        $chk->execute([$platform, $accountName, $title]);
+        $existing = $chk->fetch();
+
+        if ($existing) {
+            $pdo->prepare("UPDATE " . table('video_data') . " SET plays=?, likes=?, comments=?, shares=?, synced_at=NOW() WHERE id=?")
+                ->execute([$plays, $likes, $comments, $shares, $existing['id']]);
+        } else {
+            $pdo->prepare("INSERT INTO " . table('video_data') . " (publish_id, platform, account_name, video_title, plays, likes, comments, shares, publish_time, synced_at) VALUES (0,?,?,?,?,?,?,?,?,NOW())")
+                ->execute([$platform, $accountName, $title, $plays, $likes, $comments, $shares, $pubTime]);
+            $newCount++;
+        }
+    }
+
+    // 更新或创建监控账号记录
+    $chk = $pdo->prepare("SELECT id FROM " . table('monitored_account') . " WHERE platform = ? AND account_name = ? LIMIT 1");
+    $chk->execute([$platform, $accountName]);
+    $acc = $chk->fetch();
+
+    if ($acc) {
+        $pdo->prepare("UPDATE " . table('monitored_account') . " SET total_videos=?, total_plays=?, total_likes=?, total_comments=?, total_shares=?, last_sync=NOW(), status='active' WHERE id=?")
+            ->execute([count($videos), $totalPlays, $totalLikes, $totalComments, $totalShares, $acc['id']]);
+    } else {
+        $pdo->prepare("INSERT INTO " . table('monitored_account') . " (platform, account_name, total_videos, total_plays, total_likes, total_comments, total_shares, last_sync, status) VALUES (?,?,?,?,?,?,?,NOW(),'active')")
+            ->execute([$platform, $accountName, count($videos), $totalPlays, $totalLikes, $totalComments, $totalShares]);
+    }
+
+    logOperation($currentUser['user_id'], $currentUser['username'], 'INFO', '数据采集', '上传采集数据', "{$accountName}: " . count($videos) . " 条视频, 新增 {$newCount} 条");
+
+    success(['new_count' => $newCount, 'total' => count($videos)], "上传成功，新增 {$newCount} 条");
 }
 
 // ───────────────────────── Excel导出 ─────────────────────────

@@ -50,6 +50,7 @@ class Sidebar(QWidget):
 
     MENU_ITEMS = [
         ("📊", "数据总览", "dashboard"),
+        ("🔍", "数据采集", "collect"),
         ("📈", "数据分析", "analysis"),
         ("👥", "账号管理", "account"),
         ("🎬", "视频处理", "video"),

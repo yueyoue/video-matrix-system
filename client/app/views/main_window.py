@@ -17,6 +17,7 @@ from ..auth import auth
 from .. import api
 
 from .dashboard import DashboardView
+from .data_collect import DataCollectView
 from .analysis import AnalysisView
 from .account import AccountView
 from .video import VideoView
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
 
     logout_signal = pyqtSignal()
 
-    PAGE_KEYS = ["dashboard", "analysis", "account", "video", "publish", "config", "log"]
+    PAGE_KEYS = ["dashboard", "collect", "analysis", "account", "video", "publish", "config", "log"]
 
     def __init__(self):
         super().__init__()
@@ -114,6 +115,7 @@ class MainWindow(QMainWindow):
         self._pages: dict[str, QWidget] = {}
 
         self._pages["dashboard"] = DashboardView()
+        self._pages["collect"] = DataCollectView()
         self._pages["analysis"] = AnalysisView()
         self._pages["account"] = AccountView()
         self._pages["video"] = VideoView()
@@ -134,6 +136,7 @@ class MainWindow(QMainWindow):
         # page titles
         self._page_titles = {
             "dashboard": "数据总览",
+            "collect": "数据采集",
             "analysis": "数据分析",
             "account": "账号管理",
             "video": "视频处理",

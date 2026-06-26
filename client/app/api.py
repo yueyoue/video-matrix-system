@@ -361,3 +361,16 @@ def sync_video_data(account_id: int = 0) -> dict:
 def get_sync_status() -> dict:
     """获取同步状态"""
     return _handle(requests.get(_api_url("/scraper/status"), headers=_headers(), timeout=_TIMEOUT))
+
+
+def collect_account_data(platform: str, sec_uid: str, account_name: str) -> dict:
+    """通知服务端采集指定账号数据"""
+    return _handle(requests.post(_api_url("/accounts-data/sync"), headers=_headers(),
+                                 json={"platform": platform, "sec_uid": sec_uid, "account_name": account_name},
+                                 timeout=120))
+
+
+def sync_collected_data(result: dict) -> dict:
+    """将桌面端采集的数据同步到服务端"""
+    return _handle(requests.post(_api_url("/accounts-data/upload"), headers=_headers(),
+                                 json=result, timeout=60))
