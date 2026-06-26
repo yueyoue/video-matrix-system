@@ -25,7 +25,7 @@ if (!isset($GLOBALS['route_segments'])) {
 $currentUser = requireAuth();
 $segments    = $GLOBALS['route_segments'];
 $method      = $GLOBALS['route_method'];
-$action      = $segments[1] ?? '';
+$action      = $segments[1] ?? ($_GET['_r'] ?? '');
 
 switch ($action) {
     case 'sync':
