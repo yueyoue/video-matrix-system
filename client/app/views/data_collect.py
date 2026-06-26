@@ -18,13 +18,25 @@ from PyQt6.QtGui import QColor
 
 from ..styles.theme import (
     BG_COLOR, CARD_STYLE, TEXT_COLOR, TEXT_SECONDARY, PRIMARY,
-    SUCCESS, DANGER, WARNING, BORDER_COLOR, PRIMARY_LIGHT,
+    SUCCESS, DANGER, WARNING, BORDER_COLOR,
     BTN_PRIMARY, BTN_DEFAULT, BTN_DANGER, TABLE_STYLE,
-    INPUT_STYLE, COMBO_STYLE, STAT_CARD_STYLE
+    INPUT_STYLE
 )
 from ..widgets.toast import Toast
 from ..widgets.stat_card import StatCard
 from .. import api
+
+# 本地定义缺失的样式
+COMBO_STYLE = f"""
+QComboBox {{
+    background: white; border: 1px solid {BORDER_COLOR}; border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; color: {TEXT_COLOR};
+    min-height: 20px;
+}}
+QComboBox:hover {{ border-color: {PRIMARY}; }}
+QComboBox::drop-down {{ border: none; width: 24px; }}
+QComboBox QAbstractItemView {{ background: white; border: 1px solid {BORDER_COLOR}; selection-background-color: {PRIMARY}12; }}
+"""
 
 
 # ── 本地数据存储 ──────────────────────────────────────────
