@@ -43,6 +43,18 @@ switch ($action) {
     case 'ping':
         success(['ok' => true, 'user' => $currentUser, 'method' => $method, 'action' => $action, 'segments' => $segments]);
         break;
+    case 'log':
+        $logFile = dirname(__DIR__) . '/logs/scraper.log';
+        $lines = 50;
+        if (file_exists($logFile)) {
+            $content = file_get_contents($logFile);
+            $allLines = explode("\n", trim($content));
+            $tail = array_slice($allLines, -$lines);
+            success(['log' => implode("\n", $tail), 'total_lines' => count($allLines)]);
+        } else {
+            success(['log' => '暂无日志', 'total_lines' => 0]);
+        }
+        break;
     case '':
         if ($method === 'GET') getList();
         elseif ($method === 'POST') create();
@@ -464,7 +476,7 @@ function getStoredCookie(string $platform): string
  */
 function scraperLog(string $msg)
 {
-    $logDir = dirname(dirname(__DIR__)) . '/logs';
+    $logDir = dirname(__DIR__) . '/logs';
     if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
     @file_put_contents($logDir . '/scraper.log', date('Y-m-d H:i:s') . " {$msg}\n", FILE_APPEND | LOCK_EX);
 }
@@ -541,12 +553,12 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
         $secUid = extractSecUid('douyin', $accountUrl);
     }
     if (empty($secUid)) {
-        scraperLog('[抖音] sec_uid 为空，无法爬取');
+        scraperLog('[抖音] sec_uid 为空，accountUrl=' . $accountUrl);
         return null;
     }
 
-    // 优先使用已登录的抖音账号Cookie
     $cookie = getStoredCookie('douyin');
+    scraperLog('[抖音] secUid=' . $secUid . ' cookie_len=' . strlen($cookie));
     if (empty($cookie)) {
         scraperLog('[抖音] 无可用Cookie，请先在「账号管理」中登录至少一个抖音账号');
         return null;
@@ -565,13 +577,14 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
     for ($page = 0; $page < $maxPages; $page++) {
         $url = "https://creator.douyin.com/web/api/media/aweme/post/?sec_user_id={$secUid}&count=20&max_cursor={$cursor}";
         $resp = httpFetch($url, $headers, $cookie);
+        scraperLog('[抖音] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 300) : 'NULL'));
         if (!$resp) { if ($page === 0) return null; break; }
 
         $data = json_decode($resp, true);
-        if (!$data) { if ($page === 0) return null; break; }
+        if (!$data) { scraperLog('[抖音] JSON解析失败'); if ($page === 0) return null; break; }
 
         $list = $data['aweme_list'] ?? $data['data']['aweme_list'] ?? [];
-        if (empty($list)) break;
+        if (empty($list)) { scraperLog('[抖音] 视频列表为空'); break; }
 
         foreach ($list as $item) {
             $stats = $item['statistics'] ?? $item['stats'] ?? [];
@@ -591,7 +604,7 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
         usleep(500000);
     }
 
-    scraperLog("[抖音] secUid={$secUid} 获取 " . count($videos) . " 条视频");
+    scraperLog('[抖音] secUid=' . $secUid . ' 获取 ' . count($videos) . ' 条视频');
     return empty($videos) ? null : $videos;
 }
 

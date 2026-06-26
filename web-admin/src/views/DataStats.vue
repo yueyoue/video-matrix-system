@@ -24,6 +24,9 @@
         <button @click="handleExport" class="btn-outline">
           <i class="fas fa-file-export mr-1.5"></i>导出Excel
         </button>
+        <button @click="showLog" class="btn-outline">
+          <i class="fas fa-file-alt mr-1.5"></i>日志
+        </button>
       </div>
     </div>
 
@@ -253,6 +256,22 @@
       </div>
     </div>
 
+    <!-- 日志查看弹窗 -->
+    <div v-if="showLogDialog" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg shadow-xl w-[800px] max-h-[80vh] flex flex-col">
+        <div class="px-5 py-4 border-b border-border flex items-center justify-between">
+          <h3 class="text-base font-semibold text-gray-900">爬虫日志</h3>
+          <div class="flex items-center gap-2">
+            <button @click="loadLog" class="btn-outline text-xs"><i class="fas fa-sync-alt mr-1"></i>刷新</button>
+            <button @click="showLogDialog = false" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+          <pre class="text-xs text-gray-600 font-mono whitespace-pre-wrap leading-5">{{ logContent || '暂无日志' }}</pre>
+        </div>
+      </div>
+    </div>
+
     <!-- 添加/编辑账号弹窗 -->
     <div v-if="showAddDialog" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg shadow-xl w-[480px] max-h-[90vh] overflow-y-auto">
@@ -298,7 +317,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import {
   getMonitoredAccounts, addMonitoredAccount, updateMonitoredAccount, deleteMonitoredAccount,
-  syncData, getVideoData, getDataSummary, buildExportUrl
+  syncData, getVideoData, getDataSummary, buildExportUrl, getScraperLog
 } from '../api/accountsData'
 
 const PLATFORMS = { douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书', weixin: '视频号' }
@@ -353,6 +372,8 @@ const videoPageSize = 20
 const showAddDialog = ref(false)
 const editingId = ref(0)
 const addForm = reactive({ platform: '', account_name: '', account_url: '' })
+const showLogDialog = ref(false)
+const logContent = ref('')
 const accountIdInput = ref('')
 const urlPrefix = ref('')
 const urlPlaceholder = ref('')
@@ -459,6 +480,18 @@ function handleExport() {
       URL.revokeObjectURL(blobUrl)
     })
     .catch(() => showToast('导出失败', 'error'))
+}
+
+async function showLog() {
+  showLogDialog.value = true
+  await loadLog()
+}
+
+async function loadLog() {
+  try {
+    const res = await getScraperLog()
+    logContent.value = res.data?.log || '暂无日志'
+  } catch (e) { logContent.value = '获取日志失败: ' + e.message }
 }
 
 // 账号 CRUD

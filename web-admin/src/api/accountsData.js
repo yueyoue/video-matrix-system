@@ -44,3 +44,8 @@ export function buildExportUrl(params = {}) {
   const qs = query.toString()
   return `${base}${qs ? '?' + qs : ''}`
 }
+
+// 获取爬虫日志
+export function getScraperLog() {
+  return api.get('/accounts-data', { params: { _r: 'log' } })
+}
