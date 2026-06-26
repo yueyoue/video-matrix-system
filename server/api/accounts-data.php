@@ -549,10 +549,11 @@ function httpPost(string $url, array $headers, string $cookie, string $body, int
 // ══════════════════════════════════════════════════════════════
 
 /**
- * 获取抖音ttwid（公开API必需Cookie）
+ * 获取抖音ttwid（通过注册接口）
  */
 function getDouyinTtwid(): string
 {
+    // 方法1: 从首页 Set-Cookie 获取
     $ch = curl_init('https://www.douyin.com/');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -563,20 +564,42 @@ function getDouyinTtwid(): string
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     ]);
     $resp = curl_exec($ch);
-    $err = curl_error($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
     $ttwid = '';
-    if ($resp && preg_match_all('/^Set-Cookie:\s*([^;]*)/mi', $resp, $matches)) {
-        foreach ($matches[1] as $c) {
-            if (strpos($c, 'ttwid=') === 0) {
-                $ttwid = substr($c, 6);
-                break;
-            }
-        }
+    if ($resp && preg_match_all('/^Set-Cookie:\s*ttwid=([^;\r\n]*)/mi', $resp, $matches)) {
+        $ttwid = $matches[1][0] ?? '';
     }
-    scraperLog('[抖音] 获取ttwid: ' . ($ttwid ? '成功' : '失败') . ' http=' . $code . ' err=' . $err . ' resp_len=' . strlen($resp ?: ''));
+    if ($ttwid) { scraperLog('[抖音] ttwid获取成功(首页)'); return $ttwid; }
+
+    // 方法2: 通过注册接口获取
+    $body = json_encode([
+        'region'  => 'cn',
+        'aid'     => 1768,
+        'needFid' => false,
+        'service' => 'www.douyin.com',
+        'migrate_info' => ['ticket' => '', 'source' => 'node'],
+        'cbUrlProtocol' => 'https',
+        'union' => true,
+    ]);
+    $ch = curl_init('https://ttwid.bytedance.com/ttwid/union/register/');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HEADER         => true,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ]);
+    $resp = curl_exec($ch);
+    curl_close($ch);
+    if ($resp && preg_match('/^Set-Cookie:\s*ttwid=([^;\r\n]*)/mi', $resp, $m)) {
+        $ttwid = $m[1];
+        scraperLog('[抖音] ttwid获取成功(注册接口)');
+    } else {
+        scraperLog('[抖音] ttwid获取失败 resp=' . ($resp ? substr($resp, 0, 300) : 'NULL'));
+    }
     return $ttwid;
 }
 
@@ -590,53 +613,101 @@ function crawlDouyin(string $secUid, string $accountUrl): ?array
         return null;
     }
 
-    // 使用抖音公开Web API（可以查看任意用户视频）
-    // 先获取ttwid
-    $ttwid = getDouyinTtwid();
-    $cookie = 'ttwid=' . $ttwid;
-
-    $headers = [
-        'Accept: application/json, text/plain, */*',
-        'Referer: https://www.douyin.com/user/' . $secUid,
-    ];
-
     $videos = [];
-    $cursor = 0;
-    $maxPages = 10;
 
-    for ($page = 0; $page < $maxPages; $page++) {
-        $url = "https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id={$secUid}&count=20&max_cursor={$cursor}&aid=6383&cookie_enabled=true&platform=PC&downlink=10";
-        $resp = httpFetch($url, $headers, $cookie);
-        scraperLog('[抖音] page=' . $page . ' resp=' . ($resp ? substr($resp, 0, 500) : 'NULL'));
-        if (!$resp) { if ($page === 0) return null; break; }
-
-        $data = json_decode($resp, true);
-        if (!$data) { scraperLog('[抖音] JSON解析失败'); if ($page === 0) return null; break; }
-
-        $list = $data['aweme_list'] ?? [];
-        if (empty($list)) { scraperLog('[抖音] 视频列表为空，status_code=' . ($data['status_code'] ?? 'null')); break; }
-
-        foreach ($list as $item) {
-            $stats = $item['statistics'] ?? [];
-            $videos[] = [
-                'title'        => $item['desc'] ?? '',
-                'plays'        => (int)($stats['play_count'] ?? 0),
-                'likes'        => (int)($stats['digg_count'] ?? 0),
-                'comments'     => (int)($stats['comment_count'] ?? 0),
-                'shares'       => (int)($stats['share_count'] ?? 0),
-                'publish_time' => isset($item['create_time']) ? date('Y-m-d H:i:s', $item['create_time']) : date('Y-m-d H:i:s'),
-            ];
+    // 方案1: 公开API
+    $ttwid = getDouyinTtwid();
+    if ($ttwid) {
+        $cookie = 'ttwid=' . $ttwid;
+        $headers = [
+            'Accept: application/json, text/plain, */*',
+            'Referer: https://www.douyin.com/user/' . $secUid,
+        ];
+        $cursor = 0;
+        for ($page = 0; $page < 10; $page++) {
+            $url = "https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id={$secUid}&count=20&max_cursor={$cursor}&aid=6383&cookie_enabled=true&platform=PC&downlink=10";
+            $resp = httpFetch($url, $headers, $cookie);
+            scraperLog('[抖音] API page=' . $page . ' resp=' . ($resp ? 'len=' . strlen($resp) : 'NULL'));
+            if (!$resp) break;
+            $data = json_decode($resp, true);
+            if (!$data) break;
+            $list = $data['aweme_list'] ?? [];
+            if (empty($list)) break;
+            foreach ($list as $item) {
+                $stats = $item['statistics'] ?? [];
+                $videos[] = [
+                    'title'        => $item['desc'] ?? '',
+                    'plays'        => (int)($stats['play_count'] ?? 0),
+                    'likes'        => (int)($stats['digg_count'] ?? 0),
+                    'comments'     => (int)($stats['comment_count'] ?? 0),
+                    'shares'       => (int)($stats['share_count'] ?? 0),
+                    'publish_time' => isset($item['create_time']) ? date('Y-m-d H:i:s', $item['create_time']) : date('Y-m-d H:i:s'),
+                ];
+            }
+            if (!($data['has_more'] ?? 0)) break;
+            $cursor = $data['max_cursor'] ?? 0;
+            usleep(500000);
         }
+    }
 
-        $hasMore = $data['has_more'] ?? 0;
-        scraperLog('[抖音] page=' . $page . ' found=' . count($list) . ' has_more=' . $hasMore);
-        if (!$hasMore) break;
-        $cursor = $data['max_cursor'] ?? 0;
-        usleep(500000);
+    // 方案2: 解析主页SSR嵌入数据
+    if (empty($videos)) {
+        scraperLog('[抖音] API无数据，尝试SSR解析');
+        $videos = crawlDouyinSSR($secUid);
     }
 
     scraperLog('[抖音] secUid=' . $secUid . ' 共获取 ' . count($videos) . ' 条视频');
     return empty($videos) ? null : $videos;
+}
+
+function crawlDouyinSSR(string $secUid): array
+{
+    $ch = curl_init('https://www.douyin.com/user/' . $secUid);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_ENCODING       => 'gzip, deflate',
+        CURLOPT_HTTPHEADER     => ['Accept: text/html'],
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    ]);
+    $html = curl_exec($ch);
+    curl_close($ch);
+    $videos = [];
+    if (!$html) { scraperLog('[抖音SSR] 请求失败'); return $videos; }
+
+    if (preg_match('/<script id="RENDER_DATA"[^>]*>([^<]+)<\/script>/', $html, $m)) {
+        $json = json_decode(urldecode($m[1]), true);
+        $awemeList = findKey($json ?? [], 'aweme_list');
+        if ($awemeList) {
+            foreach ($awemeList as $item) {
+                $stats = $item['statistics'] ?? [];
+                $videos[] = [
+                    'title'        => $item['desc'] ?? '',
+                    'plays'        => (int)($stats['play_count'] ?? 0),
+                    'likes'        => (int)($stats['digg_count'] ?? 0),
+                    'comments'     => (int)($stats['comment_count'] ?? 0),
+                    'shares'       => (int)($stats['share_count'] ?? 0),
+                    'publish_time' => isset($item['create_time']) ? date('Y-m-d H:i:s', $item['create_time']) : date('Y-m-d H:i:s'),
+                ];
+            }
+            scraperLog('[抖音SSR] 从RENDER_DATA提取 ' . count($videos) . ' 条');
+        } else {
+            scraperLog('[抖音SSR] RENDER_DATA中未找到aweme_list');
+        }
+    } else {
+        scraperLog('[抖音SSR] RENDER_DATA未找到, html_len=' . strlen($html));
+    }
+    return $videos;
+}
+
+function findKey($arr, string $key)
+{
+    if (!is_array($arr)) return null;
+    if (isset($arr[$key])) return $arr[$key];
+    foreach ($arr as $v) { $r = findKey($v, $key); if ($r !== null) return $r; }
+    return null;
 }
 
 // ══════════════════════════════════════════════════════════════
