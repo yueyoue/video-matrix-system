@@ -262,7 +262,7 @@
         <div class="p-5 space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">平台 <span class="text-danger">*</span></label>
-            <select v-model="addForm.platform" class="input-select w-full" :disabled="!!editingId">
+            <select v-model="addForm.platform" class="input-select w-full" :disabled="!!editingId" @change="onPlatformChange">
               <option value="">请选择平台</option>
               <option value="douyin">抖音</option>
               <option value="kuaishou">快手</option>
@@ -275,9 +275,12 @@
             <input v-model="addForm.account_name" class="input-select w-full" placeholder="输入账号昵称/名称" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">主页链接</label>
-            <input v-model="addForm.account_url" class="input-select w-full" placeholder="粘贴该账号的主页URL（可选，有助于精准匹配）" />
-            <p class="text-xs text-gray-400 mt-1">提供主页链接可以更准确地爬取数据，不填则通过账号名称搜索</p>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">主页ID</label>
+            <div class="flex items-center">
+              <span v-if="urlPrefix" class="shrink-0 h-9 flex items-center px-3 text-xs text-gray-500 bg-gray-50 border border-r-0 border-border rounded-l-lg" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ urlPrefix }}</span>
+              <input v-model="accountIdInput" class="input-select flex-1" :class="urlPrefix ? 'rounded-l-none' : ''" :placeholder="urlPlaceholder" />
+            </div>
+            <p class="text-xs text-gray-400 mt-1.5">{{ urlHint }}</p>
           </div>
         </div>
         <div class="px-5 py-4 border-t border-border flex justify-end gap-2">
@@ -350,6 +353,30 @@ const videoPageSize = 20
 const showAddDialog = ref(false)
 const editingId = ref(0)
 const addForm = reactive({ platform: '', account_name: '', account_url: '' })
+const accountIdInput = ref('')
+const urlPrefix = ref('')
+const urlPlaceholder = ref('')
+const urlHint = ref('选择平台后自动填入链接前缀，只需填写后半部分ID')
+
+const PLATFORM_URLS = {
+  douyin:      { prefix: 'https://www.douyin.com/user/', placeholder: 'MS4wLjABAAAAxxxxxx', hint: '打开抖音App → 个人主页 → 分享 → 复制链接，粘贴链接中 /user/ 后面的部分' },
+  kuaishou:    { prefix: 'https://www.kuaishou.com/profile/', placeholder: '3xgpck79fmg5ey2', hint: '打开快手App → 个人主页 → 分享 → 复制链接，粘贴链接中 /profile/ 后面的部分' },
+  xiaohongshu: { prefix: 'https://www.xiaohongshu.com/user/profile/', placeholder: '5a1234567890abcdef', hint: '打开小红书App → 个人主页 → 分享 → 复制链接，粘贴链接中 /user/profile/ 后面的部分' },
+  weixin:      { prefix: '', placeholder: '暂不支持视频号自动爬取', hint: '视频号暂不支持公开数据爬取，后续版本将支持' },
+}
+
+function onPlatformChange() {
+  const cfg = PLATFORM_URLS[addForm.platform]
+  if (cfg) {
+    urlPrefix.value = cfg.prefix
+    urlPlaceholder.value = cfg.placeholder
+    urlHint.value = cfg.hint
+  } else {
+    urlPrefix.value = ''
+    urlPlaceholder.value = ''
+    urlHint.value = ''
+  }
+}
 
 function formatNumber(n) {
   if (n === null || n === undefined) return '0'
@@ -439,7 +466,14 @@ function editAccount(item) {
   editingId.value = item.id
   addForm.platform = item.platform
   addForm.account_name = item.account_name
-  addForm.account_url = item.account_url || ''
+  // 解析URL前缀和ID
+  const cfg = PLATFORM_URLS[item.platform]
+  if (cfg && cfg.prefix && item.account_url && item.account_url.startsWith(cfg.prefix)) {
+    accountIdInput.value = item.account_url.slice(cfg.prefix.length)
+  } else {
+    accountIdInput.value = item.account_url || ''
+  }
+  onPlatformChange()
   showAddDialog.value = true
 }
 
@@ -449,15 +483,18 @@ function cancelEdit() {
   addForm.platform = ''
   addForm.account_name = ''
   addForm.account_url = ''
+  accountIdInput.value = ''
+  urlPrefix.value = ''
 }
 
 async function submitAccount() {
+  const fullUrl = accountIdInput.value ? (urlPrefix.value + accountIdInput.value) : ''
   try {
     if (editingId.value) {
-      await updateMonitoredAccount(editingId.value, { account_name: addForm.account_name, account_url: addForm.account_url })
+      await updateMonitoredAccount(editingId.value, { account_name: addForm.account_name, account_url: fullUrl })
       showToast('更新成功')
     } else {
-      await addMonitoredAccount({ platform: addForm.platform, account_name: addForm.account_name, account_url: addForm.account_url })
+      await addMonitoredAccount({ platform: addForm.platform, account_name: addForm.account_name, account_url: fullUrl })
       showToast('添加成功')
     }
     cancelEdit()

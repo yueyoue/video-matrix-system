@@ -88,7 +88,7 @@
           <div class="form-group">
             <label class="form-label">角色</label>
             <select v-model="form.role" class="form-select">
-              <option value="user">普通用户</option>
+              <option value="operator">普通用户</option>
               <option value="admin">管理员</option>
             </select>
           </div>
